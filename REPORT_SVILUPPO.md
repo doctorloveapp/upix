@@ -1,376 +1,354 @@
-# UPIX 1989 — Revisione tecnica e piano di sviluppo
-
-Data: **7 novembre 2026**. Revisione di README, sorgente principale, vecchio prototipo locale, launcher, script immagini e asset. Ambiente: Windows, Python 3.13.5, Pygame 2.6.1 / SDL 2.28.4.
-
-## Stato operativo aggiornato — Task asset boss e avvio Fase 1
-
-- Piano generale approvato dall'utente; obiettivo: consolidamento verso Release Candidate.
-- **Regola vincolante:** qualsiasi comando/operazione Git, anche di sola lettura,
-  appartiene esclusivamente all'utente. Regola salvata anche in `AGENTS.md`.
-  Nessun comando Git eseguito in questo task.
-- **Completato:** integrazione definitiva di `public/icon/boss2.png`, preservazione
-  alpha e proporzioni, centratura e separazione dei parametri grafici/fisici.
-- **Verifica:** 22 test superati (19 precedenti + 3 regressioni sul boss),
-  controllo visivo di un frame reale renderizzato con SDL dummy e ingrandimento
-  dello sprite su sfondo scuro.
-- **Fase 1 collisioni:** specifica tecnica definita nella sezione dedicata sotto;
-  il sub-stepping non è ancora implementato. L'attraversamento dei muri rimane
-  un problema aperto: non confondere l'aggiornamento grafico con la sua soluzione.
-- Prossima consegna: solver del movimento del boss con substep e relative
-  regressioni, prima dell'estensione ai missili e della migrazione al tempo fisso.
-
-### Dettaglio dell'aggiornamento grafico
-
-`boss2.png` è un PNG RGBA di **817 × 592 px**. Il verde presente nei canali RGB
-dello sfondo è trasparente tramite alpha: non va rimosso con una colorkey.
-Il vecchio codice usava `convert()` e il colore dell'angolo come trasparenza;
-ora `_load_boss_sprite()` usa `convert_alpha()` e ridimensionamento proporzionale
-nearest-neighbor, adatto allo stile pixel art.
-
-Parametri espliciti in `Upqix89.py`:
-
-| Parametro | Valore e responsabilità |
-| --- | --- |
-| `BOSS_SPRITE_FILENAME` | `boss2.png`, unica risorsa grafica del boss |
-| `BOSS_SPRITE_MAX_SIZE` | 40 × 40 px; dimensione risultante attuale 40 × 29 |
-| `BOSS_COLLISION_RADIUS` | 15 px; conserva la hitbox ordinaria esistente, senza dipendere dallo sprite |
-| Posizione grafica | `Rect.center = (round(enemy_x), round(enemy_y))`, offset aggiuntivo zero |
-
-La simulazione mantiene le coordinate float; l'arrotondamento riguarda soltanto
-il rendering. Nessuna deformazione quadrata e nessuna correzione della posizione
-fisica per adattarla all'immagine. La hitbox attuale contro scia/player rimane
-un quadrato di lato 30 px; la collisione con i muri resta ancora basata sul centro.
-
-Asset mancante o corrotto: messaggio diagnostico e cerchio di raggio 15, senza
-ricaricare `boss.png`. Nel vecchio fallback il raggio diventava 4: ora l'assenza
-della grafica non modifica la fisica. Il file storico non è stato eliminato.
-
-Nuove regressioni: proporzioni e alpha dell'asset reale; compositing e centratura
-su posizione frazionaria senza mutare la simulazione; fallback mancante/corrotto
-con hitbox invariata e nessun recupero implicito del vecchio sprite.
-
-## Stato dello sviluppo
-
-UPIX ha un ciclo giocabile completo: partenza, tracciamento, chiusura, rivelazione dell'immagine, morte/respawn, vittoria, livelli e riavvio. Griglia e flood fill inverso sono una base appropriata. La classe `Game` concentra però quasi tutte le responsabilità; prima di aggiungere altri sistemi conviene consolidare collisioni, tempi e prestazioni della cattura.
-
-La definizione corretta è **prototipo giocabile da consolidare**. I problemi sotto non annullano il funzionamento nelle partite ordinarie, ma riguardano casi riproducibili e vincoli ancora non garantiti.
-
-| Sistema | Stato verificato |
-| --- | --- |
-| Campo | 800 × 600 px, griglia 400 × 300, celle di 2 px |
-| Giocatore | Sprite LUKSO, movimento ortogonale continuo, aree conquistate sicure |
-| Tracciamento | Percorsi ortogonali, blocco dell'inversione, morte per autointersezione |
-| Conquista | BFS dal centro del boss; riempimento delle zone non raggiungibili |
-| Nemici | Un boss con deviazioni casuali e missili diretti al giocatore |
-| Progressione | 12 immagini, soglia 80%, 3 vite, velocità/frequenza spari crescenti |
-| Audio | 4 musiche; saldatrice ora gestita sullo stato di tracciamento |
-| Fine partita | Game Over e riavvio; dopo il dodicesimo livello si ricomincia |
-| Punteggio | Interno, azzerato per livello, non mostrato |
-| Mancante | Menu, pausa, impostazioni, classifica, boss differenziati, potenziamenti |
-
-## Modifiche applicate
-
-### Audio: diagnosi e correzione
-
-`Sound.play(-1)` era già presente: non mancava il comando di riproduzione. Il file si decodifica correttamente. L'analisi PCM ha rilevato:
-
-- Durata decodificata circa **8,70 s**.
-- Silenzio/quasi silenzio iniziale di circa **0,19 s**, misurato con FFmpeg a −42 dB; RMS dei primi 100 ms circa 1,9 su scala s16.
-- RMS dell'effetto circa **1.070**, contro circa **7.880** della prima musica, prima dei volumi del gioco.
-- Con i vecchi volumi, effetto 0,50 e musica 0,26, livello medio stimato dell'effetto circa **12 dB inferiore** alla musica. È una misura indicativa del mascheramento, non una misura percettiva LUFS.
-
-Questi dati spiegano una possibile scarsa udibilità, soprattutto nelle tracce brevi. Non dimostrano quale uscita audio fosse attiva nella sessione dell'utente.
-
-Interventi:
-
-1. Preparato `saldatrice.wav` dallo stesso MP3: taglio iniziale di 0,30 s, guadagno ×2, limitatore e brevi fade. Originale conservato e non modificato.
-2. Riservato il canale 0: il loop non dipende dalla selezione automatica dei canali e non riparte a ogni frame.
-3. Centralizzata la sincronizzazione: effetto attivo quando si disegna in una cella libera, senza vittoria o Game Over.
-4. Musica temporaneamente a 0,10 durante il disegno, ripristinata a 0,26 alla fine; effetto a 0,80.
-5. Arresto su conquista, morte, Game Over, nuovo livello, riavvio e uscita. Gli errori audio lasciano il gioco utilizzabile.
-
-Il canale riservato è previsto dalla [documentazione Pygame](https://www.pygame.org/docs/ref/mixer.html); la musica usa lo [stream separato di mixer.music](https://www.pygame.org/docs/ref/music.html).
-
-**Resta da verificare all'ascolto il bilanciamento sugli altoparlanti dell'utente.** Il fallback MP3 conserva l'attacco e il livello della registrazione originale: distribuire il WAV preparato.
-
-### Correzioni e preparazione del repository
-
-| Modifica | Motivo |
-| --- | --- |
-| Spawn sulla riga 298 anziché 297 | Il bordo inferiore occupa 298–299: prima il cursore partiva nel campo libero |
-| `last_safe_x/y` aggiornati dopo la conquista | Respawn corretto anche iniziando subito una nuova traccia |
-| Pulizia di scia, direzione e missili anche all'ultima morte | Stato terminale coerente |
-| Percorsi da `__file__` | Asset disponibili da qualsiasi directory di avvio |
-| Inizializzazione Pygame in `main()` | Import senza finestra e senza attivare l'audio |
-| Display passato a `Game` | Meno globali e rendering verificabile nei test |
-| Errori mirati su musica e sfondi | Diagnostica senza nascondere qualsiasi errore con `except` generico |
-| Playlist riallineata nel ciclo 12 → 1 | Ripartenza dalla prima traccia |
-| `requirements.txt` | Versione Pygame riproducibile nell'ambiente verificato |
-| `.gitignore` | Cache, ambienti, log e configurazioni personali esclusi |
-| Launcher locale | Directory corretta e visualizzazione degli errori di avvio |
-| README | Regole reali, audio, installazione e test; corretta la descrizione di algoritmo “infallibile” |
-
-Movimento automatico, soglia dell'80%, bilanciamento dei nemici e impostazione della conquista sono rimasti quelli del prototipo.
-
-## Verifiche e limiti
-
-**Baseline della prima revisione: 19 test automatici superati**, con
-`python -m unittest discover -s tests -v`. La suite attuale contiene **22 test**,
-inclusi quelli descritti nel registro operativo iniziale.
-
-Copertura della baseline:
-
-- Partenza e movimento sicuro silenziosi; loop singolo nel campo e musica attenuata.
-- Chiusura, riattivazione alla traccia successiva e aggiornamento del respawn.
-- Morte normale/finale, autointersezione e collisioni ordinarie boss/missile contro la scia.
-- Assorbimento ordinario dei missili in zona sicura.
-- Conquista opposta al boss e vittoria oltre l'80%.
-- Cambio livello, ciclo campagna e riavvio senza loop residuo.
-- Decodifica e rendering di tutti i 12 sfondi.
-- Caricamento da un'altra directory; fallback senza asset e senza dispositivo audio.
-- Fallback MP3 e segnale non silenzioso nei primi 100 ms del WAV.
-- Import senza inizializzare Pygame.
-
-I driver SDL dummy non certificano ascolto reale, latenza, resa visiva o bilanciamento dei livelli. I test non coprono ogni collisione: le diagnostiche seguenti dimostrano lavoro ancora necessario.
-
-## Interventi proposti, in ordine di priorità
-
-### P1 — Collisioni continue e vincoli del boss
-
-**Difetto riprodotto:** muro verticale largo una cella, x = 200–201 px. Il boss da x = 196 con velocità 6,6 arriva a x = 202,6 senza rilevarlo. Un missile da x = 198 con velocità 5 arriva a x = 203 e resta attivo. Sono valori compatibili con il gioco.
-
-Si controlla soltanto la cella finale. Il boss usa il centro per urtare i muri e un rettangolo più grande per colpire la scia: la forma fisica non è coerente. Il rimbalzo inverte entrambi gli assi e aggiunge uno spostamento che può produrre altri attraversamenti.
-
-**Proposta:** esaminare tutte le celle attraversate dal movimento, con substep limitati o scansione della griglia. Risolvere gli assi separatamente e mantenere il boss in una cella libera. Definire una hitbox coerente e il comportamento nei corridoi più stretti del suo diametro. Per i missili stabilire l'ordine effettivo fra urto con scudo e scia lungo il segmento.
-
-**Accettazione:** muri di una cella impermeabili a tutte le velocità; test su urti obliqui, angoli, corridoi e frontiere appena conquistate. `fill_area()` deve validare il seme prima di modificare la griglia: partire da una cella `FILLED` invalida le assunzioni della BFS.
-
-### P1 — Tempi e velocità coerenti
-
-Il giocatore avanza di una cella per frame, boss/missili usano pixel per frame e gli spari usano millisecondi. A FPS bassi cambiano le distanze percorse fra gli spari. La velocità diagonale iniziale del boss è maggiore di quella normalizzata dopo il primo cambio casuale.
-
-**Proposta:** simulazione a passo fisso, ad esempio 60 aggiornamenti/s, separata dal rendering con accumulatore e recuperi limitati. Per il giocatore accumulare il tempo necessario a percorrere una cella. Azzerare l'accumulatore dopo la pausa.
-
-**Accettazione:** stessa distanza e sequenza temporale degli spari con rendering a 30/60/144 FPS, usando una simulazione deterministica; norma della velocità coerente dalla partenza.
-
-### P1 — Cattura senza scatti e contabilità dell'area
-
-Cinque catture con taglio verticale completo hanno richiesto **106,5–145,4 ms**, mediana **126,0 ms**, su questo PC in modalità headless. Non è un benchmark universale. Il budget a 60 FPS è 16,7 ms: `fill_area()` può bloccare più frame.
-
-**Proposta progressiva:** misurare BFS/scansione/blit separatamente; usare una struttura compatta di visita; contatore incrementale delle celle; blit per intervalli di riga anziché per cella. Conservare la scia come lista ordinata con un set parallelo per l'appartenenza, oggi lineare. Se necessario, introdurre uno stato `CAPTURING` che congela la simulazione e distribuisce l'aggiornamento visivo su più frame.
-
-Decidere anche se la percentuale misura solo terreno conquistabile. Oggi comprende il bordo ma parte da zero sul display. Il punteggio non tratta le celle della scia allo stesso modo delle altre celle catturate. Separare `initial_safe_cells`, `captured_cells`, `level_score` e `run_score`.
-
-**Accettazione:** nessuno scatto percepibile sul dispositivo target; percentuale coerente prima/dopo il primo taglio; stesse regioni conquistate su percorsi concavi e corridoi di una cella.
-
-### P2 — Stati, pausa e moduli
-
-Estrarre gradualmente `settings`, `grid`, `player`, `enemies`, `audio`, `rendering` e coordinamento `game`, mantenendo `Upqix89.py` come entry point. La logica della griglia dovrebbe poter funzionare senza display.
-
-Stati suggeriti: `MENU`, `PLAYING`, `CAPTURING`, `PAUSED`, `DYING`, `LEVEL_CLEAR`, `GAME_OVER`, `CAMPAIGN_CLEAR`. Priorità a pausa e perdita del focus: oggi simulazione e pericoli continuano quando la finestra non è attiva. La pausa dovrà sospendere saldatrice e timer.
-
-Non serve ancora un framework di entità generico: moduli piccoli e dipendenze esplicite bastano.
-
-### P2 — Asset e distribuzione
-
-`public/` occupa circa **88,54 MiB**, incluso il nuovo WAV. Esistono **12 coppie identiche**, per **27,18 MiB** ridondanti. Le immagini numerate `.png` hanno firma JPEG: lo script le copia, non le converte.
-
-**Proposta:** manifest dei livelli che punti ai nomi originali, oppure vera esportazione al formato scelto. Eliminare duplicati dopo aver aggiornato i riferimenti e verificato il pacchetto. Separare sorgenti grafici e asset distribuiti. Il manifest conterrà immagine, musica, boss, velocità, spari, soglia e regole.
-
-Le icone mancanti hanno fallback. Il boss ora gestisce anche file corrotto;
-il cursore presente ma corrotto può ancora interrompere l'avvio. Estendere gli
-errori mirati e controllare il manifest prima della partita. La warning
-`pkg_resources` proviene da Pygame: monitorare un aggiornamento compatibile senza
-pin casuali ad altre dipendenze. Le misure dello spazio occupato sopra appartengono
-alla prima revisione, precedente all'aggiunta di `boss2.png`.
-
-Prima della pubblicazione completare l'inventario di provenienza e licenze di immagini/musiche: nei file esaminati non è documentato. Nessun asset è stato sostituito o eliminato e non sono state attribuite licenze non presenti.
-
-## Riferimenti arcade e direzione di gioco
-
-**Qix è del 1981**, mentre **Volfied è del 1989**. Taito descrive Qix con due modalità di avanzamento e più punti per la cattura lenta; la soglia della versione presentata su EGRET II mini è 75%. Volfied usa l'80% e rende vulnerabili nave e linee incomplete quando la barriera è disattivata. Fonti: [Taito — Qix](https://www.taito.co.jp/egret2mini/title), [HAMSTER — Volfied](https://www.arcadearchives.com/en/title/aca-301/).
-
-Qix combina il nemico nel campo con gli Sparx che seguono le linee sicure: ruoli confermati da [Taito Milestones](https://www.taito.co.jp/taitomilestones/titles). La documentazione storica riportata da [Arcade Database](https://adb.arcadeitalia.net/dettaglio_mame.php?game_name=qix) descrive anche miccia legata alle esitazioni, premio per la modalità lenta e separazione di due Qix. Sono meccaniche da valutare singolarmente.
-
-La lezione di design è la scelta fra spazio conquistato, tempo di esposizione e rientro sicuro. UPIX possiede già questo nucleo; il bordo sempre sicuro e i missili schermati consentono però attesa indefinita. Questa è una valutazione derivata dal confronto, non una nuova regola già implementata.
-
-### Direzione consigliata
-
-Mantenere **conquista all'80%, cursore LUKSO, immagine rivelata e boss caratterizzati**, con base vicina a Volfied. Recuperare da Qix le decisioni geometriche e introdurre le varianti separatamente:
-
-1. **Insegnare il rischio della scia:** primo livello leggibile, boss lento, primi secondi senza spari e vulnerabilità chiaramente segnalata.
-2. **Premiare la pianificazione:** tagli lunghi più redditizi ma esposti; penisole corte come preparazione a chiusure successive; bonus chiaro quando si supera ampiamente la soglia.
-3. **Anticipare gli attacchi:** segnale visivo/sonoro prima dello sparo. Aumentare la velocità dopo aver reso affidabili le collisioni.
-4. **Una pressione contro l'attesa:** provare un nemico perimetrale oppure uno scudo a consumo, separatamente. La saldatrice resterà comunque silenziosa in zona sicura.
-5. **Due velocità come variante successiva:** rapido per sicurezza, lento per più punti, con colori e comando espliciti. Prima occorre mostrare il punteggio e stabilire i tempi.
-6. **Potenziamenti leggibili:** rallentamento del boss o velocità di tracciamento, con durata visibile. Valutare uno o due effetti prima di aggiungere armi e combinazioni.
-
-La sicurezza deve restare prevedibile: un nemico che in futuro attraversa il territorio conquistato deve farlo per una regola insegnata e segnalata.
-
-### Strategia con il gioco attuale
-
-- Partire lontano dal boss e dalla traiettoria degli ultimi missili.
-- Preferire inizialmente chiusure corte, poi usarle per preparare tagli importanti: tutta la scia resta vulnerabile.
-- Lasciare il boss nella regione più piccola: si conquista ciò che non raggiunge, non necessariamente la regione geometricamente più piccola.
-- Pianificare il rientro prima di uscire: autointersezione e inversione non sono vie di fuga.
-- Sfruttare il ritmo degli spari. Finché non si correggono le collisioni, un muro di una cella non è una difesa completamente affidabile.
-
-Questi consigli sono dedotti dal codice UPIX e andranno rivalutati con il bilanciamento futuro.
-
-## Roadmap
-
-Fasi ordinate per dipendenza, senza stime temporali arbitrarie.
-
-| Fase | Consegna | Criterio per proseguire |
-| --- | --- | --- |
-| 1 — Consolidamento | Collisioni continue, seme valido, tempo fisso, percentuali coerenti | Muri sottili impermeabili, boss sempre in celle libere, simulazione indipendente dagli FPS |
-| 2 — Fluidità e controllo | Cattura ottimizzata, pausa/focus, HUD score, volumi | Nessuno scatto nelle catture target; pausa senza avanzare timer o perdere vite |
-| 3 — Vertical slice | Tre livelli con tutorial e boss diversi | Regole comprensibili senza spiegazione esterna e difficoltà crescente verificata giocando |
-| 4 — Varietà | Una pressione anti-attesa e uno/due potenziamenti | Ogni aggiunta introduce una decisione riconoscibile; il disegno rimane centrale |
-| 5 — Campagna | Manifest dei 12 livelli, score cumulativo, bonus e finale | Campagna completabile, progressione e riavvio coerenti |
-| 6 — Release | Menu, impostazioni, classifica, pacchetto Windows, crediti | Avvio su PC pulito senza Python, asset inclusi e sessioni prolungate senza blocchi |
-
-Per i tre livelli iniziali: il primo insegna cattura/rientro; il secondo introduce spari anticipati; il terzo cambia il comportamento del boss e premia il confinamento. Costruire gli altri nove dopo questa validazione, anziché differenziarli soltanto per immagine e velocità.
-
-Due boss richiedono una scelta: conservare entrambe le regioni nemiche oppure vincere separandoli. La BFS attuale da un solo boss catturerebbe erroneamente il territorio dell'altro.
-
-## Fase 1 — Specifica tecnica del sub-stepping del boss
-
-**Stato: progettazione completata, implementazione da eseguire.** Il task attuale
-richiede l'avvio della pianificazione collisioni; il movimento runtime non è
-stato sostituito. La grafica del boss è già operativa.
-
-### 1. Contratto fisico e geometria
-
-- Posizione logica: centro float `(enemy_x, enemy_y)` in pixel.
-- Forma scelta: **AABB 30 × 30 px**, semiestensioni `(15, 15)`, coerente con la
-  hitbox attuale contro scia/player. La sprite, inclusi catene e alpha, non è
-  una maschera fisica. Eventuale diversa hitbox richiederà una decisione di design.
-- Celle: rettangoli di lato `CELL_SIZE`; `FILLED` è solido. Fuori dalla griglia
-  è solido. Il boss può essere tangente a un muro, non compenetrarlo.
-- Usare intervalli geometrici semiaperti e confronti float espliciti, senza
-  convertire il corpo in `pygame.Rect` interi durante la simulazione.
-- Una candidata AABB interroga tutte le celle nell'intervallo
-  `floor(left / CELL_SIZE)` … `ceil(right / CELL_SIZE) - 1` e analogo per Y.
-  Filtrare con sovrapposizione stretta: la tangenza non è penetrazione.
-- Precondizione e postcondizione: corpo dentro il campo libero e centro in una
-  cella `EMPTY`. Una posizione iniziale invalida è un errore di stato da segnalare
-  prima di muovere; niente teletrasporti o spostamenti correttivi arbitrari.
-
-Questo renderà il boss più coerente anche visivamente: oggi il corpo può
-oltrepassare un muro finché il suo centro non lo tocca. Sarà una correzione fisica
-esplicita da verificare nelle aree strette, non un effetto della nuova immagine.
-
-### 2. Suddivisione deterministica del movimento
-
-Per il vettore di spostamento richiesto `(dx, dy)`:
-
-```text
-max_axis_step = CELL_SIZE / 2                 # 1 px con la griglia attuale
-N = max(1, ceil(max(abs(dx), abs(dy)) / max_axis_step))
-substep = frazione 1/N del movimento di un tick
+# UPIX 1989 — Stato tecnico e piano di sviluppo
+
+Aggiornamento: **7 novembre 2026**. Ruolo operativo: Senior Game Engine Developer
+e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
+
+## Regole vincolanti e stato attuale
+
+- **Tutte le operazioni Git, anche di sola lettura, sono riservate all'utente.**
+  Nessun comando Git eseguito in questo task. Regola conservata in `AGENTS.md`.
+- Il piano generale è approvato. **Passi 1A, 1B e 1C implementati**; il collaudo
+  esteso 1D e gli altri interventi della roadmap restano aperti.
+- Campo operativo **800 × 600 px**, celle di 2 px, griglia **400 × 300**.
+- Boss `boss2.png`: **80 × 58 px**, alpha e proporzioni preservati, centro sulla
+  posizione logica. Corpo fisico **AABB 30 × 30 px**, indipendente dalla grafica.
+- I dodici sfondi **01.svg–12.svg** sono caricati e svelati progressivamente.
+- Musica normale **0,26**, musica durante il disegno **0,155**, effetto saldatrice
+  **0,80**. L'ultima richiesta dimezza la riduzione precedente, da 0,21 a 0,105:
+  la musica è quindi più udibile durante il disegno. Costante dedicata
+  `DRAW_MUSIC_ATTENUATION = 0.105`; il volume attenuato è calcolato da quello normale.
+- **70 test superati**, più diagnostica deterministica di 3.000 movimenti del
+  solver senza penetrazioni e controllo visivo degli SVG renderizzati/rivelati.
+- Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**,
+  `resvg_py` **0.5.0**. Dipendenze dichiarate in `requirements.txt`.
+
+## Consegna corrente: Fase 1B e 1C
+
+### Solver indipendente — `collisions.py`
+
+Il modulo usa esclusivamente la libreria standard. Non legge Pygame, tastiera,
+orologi o casualità e non modifica griglia, vite o entità del chiamante.
+
+`AABB` è immutabile e conserva limiti float. Gli intervalli sono semiaperti,
+la tangenza non è penetrazione. `CollisionGrid` è una vista su `cells[x][y]`:
+forma stabile, aggiornamenti consentiti fra query, nessuna mutazione durante una
+query. Fuori dal campo è solido.
+
+`move_body()` implementa il contratto approvato:
+
+1. Valida finitezza, rappresentabilità e corpo iniziale libero.
+2. Calcola `N = max(1, ceil(max(abs(dx), abs(dy)) / (CELL_SIZE / 2)))`.
+   Con celle di 2 px, ogni componente del substep è al massimo 1 px.
+3. Risolve **X, poi Y**, in ordine fisso. Ogni segmento enumera le celle del
+   corpo lungo il percorso, incluse le facce di contatto, e determina il primo
+   ostacolo con sovrapposizione stretta sull'asse trasversale.
+4. Porta il corpo alla tangenza esatta con la parete, riflette soltanto l'asse
+   colpito e verifica/consuma il residuo nel nuovo verso. I substep successivi
+   usano il verso aggiornato. Più rimbalzi nello stesso tick sono consentiti.
+5. Risolve i pareggi con priorità muro, scia, giocatore; l'ordine delle celle è
+   stabile per riga/colonna. Una minaccia oltre una parete non attraversata non
+   colpisce il boss.
+6. Restituisce nuova AABB, parità delle riflessioni, assi vincolati ed eventuale
+   evento di contatto. Il chiamante applica la risposta una sola volta.
+
+L'inviluppo `swept_bounds` è soltanto una selezione conservativa dei candidati:
+non viene trattato come prova di urto diagonale. Un test di passaggio vicino a
+un angolo protegge questa distinzione.
+
+Un corridoio esattamente largo quanto il corpo non permette movimento su
+quell'asse: il risultato lo marca come **vincolato**, il chiamante pone a zero
+la relativa velocità e consente il movimento sull'altro asse. Questa regola
+evita riflessioni infinite a distanza zero.
+
+I budget diagnostici sono espliciti: massimo 4.096 substep/tick e 4.096 contatti
+per segmento d'asse. Se vengono superati il movimento è rifiutato, senza
+allargare il passo o saltare celle. Sono molto superiori ai 7 substep necessari
+per 6,6 px/tick. Input invalidi non vengono riparati con teletrasporti.
+
+### Integrazione runtime — `Upqix89.py`
+
+`_move_boss()` chiama il solver, aggiorna il centro float e applica riflessioni
+o vincoli alle velocità. La stessa AABB 30 × 30 serve per muri, scia e player;
+il rendering conserva il suo arrotondamento separato. La scia viene interrogata
+localmente tramite un insieme di celle, escludendo quelle già sicure.
+
+AI, spari e timer rimangono eseguiti una volta per aggiornamento, non per
+substep. Il movimento è ancora espresso in pixel/tick: la migrazione al tempo
+fisso non è inclusa in questa consegna e il gioco completo non è ancora
+indipendente dal frame rate. Il determinismo del solver riguarda gli stessi
+input nello stesso ambiente; non equivale a replay deterministico dell'AI.
+
+Contatto con scia/player vulnerabile: perdita di una vita e arresto del tick.
+Un tratto appena creato dal player viene controllato subito, dato che il player
+si muove dopo il boss. Il vecchio controllo del solo centro e gli spostamenti
+correttivi successivi al rimbalzo sono stati rimossi.
+
+Stato fisico numericamente invalido: simulazione sospesa, saldatrice spenta,
+diagnostica visibile e tasto **R** per riaprire il livello. Non vengono sottratte
+vite o corrette arbitrariamente le coordinate per nascondere il problema.
+
+### Conquista prima delle scritture — `territory.py`
+
+`plan_capture()` costruisce un piano immutabile senza modificare dati di gioco:
+
+- Verifica corpo del boss libero, scia senza duplicati, continuità ortogonale,
+  celle entro il campo ed estremi in territorio sicuro.
+- Controlla il contatto della nuova frontiera con **tutto il corpo** del boss.
+  Un contatto genera `CaptureContactError`: il gioco perde una vita senza
+  modificare griglia o canvas.
+- Valida il seme BFS; usa la scia come barriera temporanea e visita la regione
+  raggiungibile dal boss. Pianifica le celle libere non raggiunte.
+- Verifica che nessuna cella selezionata invada il corpo del boss. Il controllo
+  usa un piccolo insieme locale, evitando di duplicare in un set tutta l'area
+  conquistata.
+- Solo dopo la validazione `fill_area()` applica il piano a griglia e canvas.
+
+Percentuale, soglia all'80% e punteggio del prototipo sono conservati: il bordo
+iniziale è ancora incluso nella percentuale e le celle della scia non vengono
+conteggiate nello stesso modo nel punteggio. La loro revisione resta separata.
+
+## Integrazione degli sfondi SVG
+
+### Problema riscontrato e scelta tecnica
+
+Il caricamento SVG nativo di Pygame/SDL_image, nell'ambiente verificato, restituiva
+per gli asset presenti una superficie trasparente senza errori. I file contengono
+rettangoli con dimensioni percentuali, gradienti e testo. Non sarebbe sufficiente
+cambiare l'estensione da PNG a SVG e considerare riuscito il caricamento.
+
+Pygame documenta il supporto SVG, mentre SDL_image dichiara un supporto a SVG
+semplici: la fedeltà va verificata sugli asset effettivi.
+[Pygame image](https://www.pygame.org/docs/ref/image.html),
+[SDL_image](https://wiki.libsdl.org/SDL2_image/FrontPage).
+
+È stato quindi integrato **resvg_py 0.5.0**, renderer con wheel Windows, che
+restituisce PNG in memoria. I parametri di rasterizzazione e font sono descritti
+nella sua [API ufficiale](https://resvg-py.readthedocs.io/en/latest/api.html).
+La dipendenza è installata nella `.venv` locale, senza installazioni globali.
+
+### Pipeline operativa — `assets.py`
+
+1. Cerca `public/assets/{level:02d}.svg` al cambio livello.
+2. Rasterizza alla dimensione richiesta. Usa il font incluso in Pygame come
+   sostituzione esplicita per il testo, senza scansione dei font di sistema.
+3. Conserva proporzioni, alpha compositato su nero e centratura. Se il viewport
+   ha un diverso rapporto di aspetto, applica bande nere.
+4. Memorizza il PNG in una cache limitata a quattro elementi, con chiave che
+   include percorso, timestamp e risoluzione. Modificare un SVG invalida la cache.
+5. In caso di errore usa PNG/JPG dello stesso livello, poi lo sfondo procedurale.
+   La sorgente effettiva è esposta da `Game.background_source` e stampata nel log.
+
+La rasterizzazione non avviene durante il movimento o durante la BFS. Il frame
+loop riutilizza la canvas: il bordo è inizialmente visibile, il resto rimane
+coperto finché non viene conquistato. Alla vittoria appare tutto lo sfondo.
+Sono stati verificati tutti i livelli **01–12**, il testo “Level 1”, i gradienti
+e la corrispondenza pixel fra porzione rivelata e immagine rasterizzata.
+
+`start.bat`, locale ed escluso secondo la preferenza dell'utente, ora preferisce
+l'interprete `.venv`. Avviando direttamente il gioco con un altro interprete,
+installarvi prima le dipendenze di `requirements.txt`; in assenza del renderer
+viene esplicitamente usato il fallback raster.
+
+### Workflow degli asset dopo questo task
+
+L'integrazione dei dodici SVG è **completata**. Prossimi interventi: manifest dei
+livelli con immagine/musica/boss/regole; eventuali SVG quadrati se si sceglierà
+un campo 1:1; esportazione e controllo del pacchetto su PC pulito. Non è stata
+modificata o eliminata alcuna risorsa originale. Restano le copie JPG rinominate
+PNG create dallo script storico, da razionalizzare in una fase dedicata.
+
+## Analisi tecnica: campo 1024 × 1024 px
+
+### Perché oggi 800 × 600
+
+Nei sorgenti e nel README originari **non è documentata la motivazione storica**:
+800 × 600 è una costante del prototipo. Gli SVG presenti dichiarano anch'essi
+800 × 600 e quindi condividono il rapporto **4:3**.
+
+La scelta è coerente con un viewport desktop comune per un prototipo, con gli
+asset esistenti e con un carico di griglia contenuto. Queste sono motivazioni
+tecniche plausibili, **non una ricostruzione certa della decisione originaria**.
+Non è emerso un limite di Pygame che imponga 800 × 600. La risoluzione maggiore
+è fattibile; il vincolo pratico attuale è il costo della conquista sincrona.
+
+### Dimensioni e complessità
+
+| Voce | 800 × 600 | 1024 × 1024 |
+| --- | ---: | ---: |
+| Rapporto | 4:3 | 1:1 |
+| Griglia a celle di 2 px | 400 × 300 | 512 × 512 |
+| Celle | 120.000 | 262.144 |
+| Pixel | 480.000 | 1.048.576 |
+| Screen + hidden image + canvas, nel benchmark | 5,493 MiB | 12,000 MiB |
+
+Celle e pixel crescono di **2,1845 volte**, cioè circa **+118,45%**. La BFS e
+la scansione della griglia sono O(celle); la scrittura delle porzioni rivelate
+dipende dalle celle conquistate. Anche gli insiemi Python di visita e il piano
+di cattura occupano memoria proporzionale all'area. I MiB in tabella riguardano
+solo le tre superfici, non memoria totale del processo o strutture della BFS.
+
+### Misure riproducibili sul codice corrente
+
+Strumento aggiunto: `tools/benchmark_resolution.py`. Esegue le funzioni di
+produzione sotto una configurazione temporanea di test, **senza cambiare i
+sorgenti o la risoluzione operativa**. Caso: taglio verticale centrale, boss
+nella metà sinistra, circa metà campo conquistato. Cinque ripetizioni per
+risoluzione; 100 chiamate per la misura del solver, senza scia attiva.
+
+Ultima sessione eseguita separatamente dalla suite, su questo PC con SDL dummy:
+
+| Misura | 800 × 600 | 1024 × 1024 |
+| --- | ---: | ---: |
+| Pianificazione validata + BFS, mediana | 115,654 ms | 562,373 ms |
+| Cattura completa, mediana | 169,743 ms | 948,602 ms |
+| Cattura completa, min–max | 155,023–227,789 ms | 709,040–1154,585 ms |
+| Chiamata solver, mediana | 0,849 ms | 1,671 ms |
+
+I tempi dipendono da carico del computer, allocazioni e raccolta memoria; altri
+run hanno mostrato valori inferiori. Non assumere il rapporto fra queste due
+mediane come legge di scala o attribuirlo tutto al numero di celle. Il caso
+misurato non copre ogni distribuzione delle aree né certifica il caso peggiore.
+La conclusione stabile è che **la cattura supera ampiamente 16,7 ms**, budget di
+un frame a 60 FPS, già a 800 × 600. A 1024 × 1024 gli scatti possono diventare
+molto più evidenti.
+
+Per ripetere, separatamente da test e altri carichi controllabili:
+
+```powershell
+.\.venv\Scripts\python.exe tools/benchmark_resolution.py --repeats 5
 ```
 
-Con 6,6 px su un asse risultano 7 substep. Non usare un numero fisso di campioni,
-né limitare N aumentando lo spostamento del singolo substep: reintrodurrebbe il
-tunnelling. Validare finitezza di coordinate e spostamenti prima della divisione.
+### Impatto sul solver e sulle proporzioni
 
-Ogni substep risolve X, poi Y, in ordine fisso. Dopo un urto, i substep successivi
-usano il verso riflesso aggiornato; non continuano con il vettore iniziale.
-L'ordine per assi è una scelta deterministica esplicita, da mantenere nei test.
-Non si assume che i soli campioni finali descrivano ogni contatto geometrico.
+Il solver esamina una regione **locale** attorno alla AABB e al segmento di
+movimento, non tutta la griglia. A corpo 30 × 30, cella 2 e velocità invariati,
+il numero nominale di celle candidate/substep rimane simile anche su un campo
+più grande. Non ci si aspetta un fattore 2,1845 obbligatorio nel suo costo.
+Le misure locali sono sensibili al carico e alle allocazioni; vanno ripetute su
+hardware target. In `Game` si aggiunge la costruzione dell'insieme della scia,
+che dipende dalla lunghezza del tracciato. Ingrandire anche corpo o velocità
+aumenterebbe rispettivamente candidati o numero di substep.
 
-### 3. Scansione del percorso e risposta al contatto
+Il boss 80 × 58 occupa oggi il 10% della larghezza e circa il 9,67% dell'altezza.
+Su 1024 × 1024 scenderebbe a circa 7,81% e 5,66%: apparirebbe relativamente
+più piccolo. Un fattore uniforme 1,28 darebbe circa **102 × 74 px**, mantenendo
+la quota di larghezza ma non quella di altezza. Il passaggio da 4:3 a 1:1 non
+consente di mantenere entrambe senza cambiare composizione; deformare lo sprite
+non è la soluzione. La hitbox non deve cambiare automaticamente con il rendering.
 
-Per ciascun movimento su un asse:
+Gli SVG attuali sono 4:3: il loader li inserisce in un viewport quadrato con
+bande nere, comportamento già verificato a 1024 × 1024. Un campo quadrato pieno
+richiederebbe risorse con viewport/viewBox 1:1 o una scelta esplicita di ritaglio.
+Vanno inoltre rivisti velocità, tempo di attraversamento e densità dei pericoli:
+più spazio a velocità invariata cambia il bilanciamento della partita.
 
-1. Calcolare l'inviluppo fra AABB iniziale e candidata: enumerare **tutte** le
-   celle di griglia intersecate dal corpo lungo quel segmento, in ordine stabile.
-2. Trovare il primo contatto lungo il verso di movimento con celle solide,
-   confine, scia attiva e giocatore vulnerabile. Usare la distanza di contatto
-   sull'asse, non la sola appartenenza della posizione finale a una cella.
-3. In assenza di urti, accettare lo spostamento. Contro un muro, portare il corpo
-   alla tangenza esatta con la faccia della cella e riflettere **solo quell'asse**.
-4. Consumare il tratto residuo del substep nel nuovo verso, verificandolo a sua
-   volta. Non scartare sistematicamente il residuo, che ridurrebbe la velocità
-   vicino ai muri. Gli impatti simultanei sui due assi riflettono entrambi.
-5. A parità esatta di tempo di contatto, un muro protegge prima di una minaccia
-   oltre la parete; gli altri pareggi seguono un ordine documentato e stabile.
-6. Contatto con scia/player vulnerabile: evento di morte e arresto del tick;
-   nessun secondo decremento vite nello stesso aggiornamento.
+### Raccomandazione e piano
 
-Il limite di 1 px aiuta a mantenere semplici gli urti; è la scansione dell'intero
-segmento, insieme alla risoluzione per asse, a rendere esplicita la copertura di
-tutte le celle. Un eventuale limite diagnostico al numero di contatti deve
-segnalare lo stato anomalo, mai saltare controlli o accettare una posizione solida.
+**Non migrare ora il campo logico a 1024 × 1024.** Mantenerlo a 800 × 600 durante
+la Fase 1. Il passaggio è fattibile, ma il flood fill attuale introduce un rischio
+concreto di latenza eccessiva.
 
-### 4. Separazione del solver e integrazione in Game
+Prima della migrazione:
 
-Introdurre un piccolo modulo di collisioni indipendente da Pygame, audio e AI.
-Input: griglia, AABB, spostamento del tick e geometria delle minacce. Output:
-posizione risolta, parità delle riflessioni su ciascun asse ed eventuale evento
-di contatto. Il solver non legge tastiera, orologio o generatore casuale e non
-modifica griglia, vite o canvas.
+1. Completare il collaudo 1D e le collisioni dei missili, ancora discrete.
+2. Ottimizzare visita con memoria compatta/indici lineari, conteggi incrementali
+   e rivelazione per intervalli invece di un blit per cella; confrontare regioni
+   catturate con i test attuali.
+3. Se necessario, distribuire la pianificazione su uno stato `CAPTURING` con
+   simulazione sospesa e budget per frame, senza perdere i vincoli di cattura.
+4. Separare risoluzione logica e viewport; definire un profilo quadrato con asset,
+   scala grafica e bilanciamento espliciti. Una presentazione più grande con
+   letterbox può essere valutata separatamente dal numero di celle simulate.
+5. Ripetere benchmark su casi piccoli/grandi, forme concave, scie lunghe e PC
+   target; attivare il nuovo profilo soltanto con risultati accettabili.
 
-`Game` applica la variazione casuale del boss **una volta per tick**, chiama il
-solver e aggiorna velocità/posizione. Spari, musica e timer non vanno moltiplicati
-per N. Gli attuali controlli boss/scia/player solo a fine frame vanno sostituiti
-con gli eventi del solver, mantenendo un solo punto che applica la morte.
+## Verifiche e limiti residui
 
-In questa prima consegna lo spostamento resta espresso nell'unità attuale
-pixel/tick: non si introduce un `dt` ricavato dal rendering. Nella successiva
-migrazione al tempo fisso, il chiamante passerà `velocità_px_s × fixed_dt` allo
-stesso solver. Questo evita di cambiare contemporaneamente collisioni e ritmo
-di gioco. Il determinismo garantito riguarda gli stessi input nello stesso
-ambiente; AI riproducibile e loop a tempo fisso sono passaggi successivi.
+Suite: **70 test superati** con:
 
-### 5. Cattura e invarianti da collegare
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
-Prima di trasformare la scia in `FILLED`, verificare anche il tratto appena
-aggiunto dal giocatore contro il corpo del boss: il giocatore viene aggiornato
-dopo il boss e può creare una sovrapposizione nello stesso tick. Un contatto è
-una morte, non una cattura seguita da espulsione del boss dal muro.
+Copertura: muro 200–201 px nei due versi e nel runtime, alta velocità, muri
+orizzontali, angoli, tangenze, residuo, rimbalzi multipli, asse vincolato,
+scia/player lungo il percorso, protezione dei muri, input invalidi, ripetibilità,
+densità dei substep nei casi di riferimento, catture concave e senza scritture
+parziali, audio, respawn, vittoria/livelli, tutti gli SVG, gradienti/testo, cache,
+fallback, viewport quadrato e rendering del boss.
 
-Validare il seme BFS e l'assenza di sovrapposizione del corpo con la frontiera
-prima della mutazione. L'intera transazione deve preservare un boss in area
-libera: non basta controllare il centro dopo il riempimento. Nessun rollback
-parziale della canvas. Questo punto appartiene alla chiusura della Fase 1 insieme
-al solver, perché la nuova hitbox non deve poter nascere dentro una parete.
+Diagnostica separata: **3.000 movimenti**, seme 1989 e componenti casuali
+comprese fra −25 e +25 px/tick, mantenendo sempre il corpo libero. Una sequenza
+più breve è conservata come regressione automatica. Controllo visivo di sfondo
+intero, cattura parziale e inserimento 4:3 nel viewport quadrato.
 
-### 6. Sequenza realizzativa e matrice di accettazione
+I driver dummy non verificano ascolto reale, latenza degli altoparlanti,
+presentazione sul monitor o difficoltà dei dodici livelli. Non sono stati
+certificati tutti i casi patologici di geometria: 1D resta aperto.
 
-| Passo | Consegna verificabile |
+Problemi ancora da affrontare:
+
+- **Missili:** collisione discreta, possibile tunnelling attraverso muri sottili.
+- **Tempo fisso:** movimento per frame e timer in millisecondi restano misti;
+  velocità iniziale del boss non ancora uniformata dopo il cambio casuale.
+- **Cattura:** sincrona e costosa; percentuale iniziale e score da chiarire.
+- **Pausa/focus:** la partita non si sospende perdendo il focus.
+- **Asset:** cursore corrotto non ancora gestito; duplicati grafici e provenienza/
+  licenze da inventariare prima della distribuzione pubblica.
+
+## Contesto conservato e roadmap generale
+
+Progressione delle consegne:
+
+| Consegna | Risultato |
 | --- | --- |
-| 1A | Geometria AABB/griglia pura e regressione del muro x=200–201 px |
-| 1B | Substep, scansione per asse, primo contatto e consumo del residuo |
-| 1C | Integrazione boss, eventi di morte e validazione della cattura |
-| 1D | Test di invarianza e sessione manuale; documentazione dei risultati |
+| Prima revisione | Audio saldatrice, percorsi stabili, spawn e respawn, 19 test |
+| Boss2 | Alpha/proporzioni/centratura e hitbox indipendente, 22 test |
+| Passo 1A | Geometria pura, boss raddoppiato, prima attenuazione, 39 test |
+| Passi 1B–1C e SVG | Solver integrato, conquista validata, 12 SVG, analisi risoluzione e nuova richiesta audio, 70 test |
 
-Test da implementare prima di dichiarare risolto il difetto:
+Il gioco resta un prototipo giocabile con 12 livelli, 3 vite, un boss con
+missili, obiettivo all'80%, movimento ortogonale continuo e morte per
+autointersezione. Dopo il dodicesimo livello torna al primo; il punteggio si
+azzera per livello e non è mostrato. Restano da progettare menu, impostazioni,
+classifica locale, finale e boss realmente differenziati.
 
-- Muro verticale/orizzontale di una cella, in entrambi i versi, a velocità
-  ordinarie e superiori al limite previsto nei livelli.
-- Nessun muro: spostamento richiesto preservato, inclusi componenti frazionari,
-  asse fermo e velocità zero. Nessun movimento introdotto dal solver.
-- Tangenza, angolo interno/esterno, due pareti vicine, più rimbalzi e corridoio
-  appena sufficiente al corpo: niente compenetrazione e riflessioni corrette.
-- Attraversamento di scia/player fra posizione iniziale e finale; protezione
-  delle zone sicure; un solo evento di morte.
-- Nuova linea che chiude vicino al boss e cattura concava: seme e corpo validi
-  prima/dopo, nessuna conquista sopra il boss.
-- Ingressi invalidi e non finiti rifiutati prima di mutare lo stato.
-- Stessa griglia, posizione e spostamento: stesso risultato; raddoppiare la
-  densità dei substep non cambia l'esito geometrico nei casi di riferimento.
-- Suite completa: nessuna regressione nei 22 test attuali. Il difetto dei
-  missili resta dichiarato aperto fino alla loro estensione dedicata.
+| Fase | Stato / consegna successiva |
+| --- | --- |
+| 1A | Completata: AABB/griglia e regressione del muro |
+| 1B | Completata: substep, primo contatto e residuo |
+| 1C | Completata: boss runtime e validazione della conquista |
+| 1D | Aperta: collaudo esteso, sessioni reali e casi limite |
+| Consolidamento restante | Missili continui, tempo fisso, percentuali coerenti |
+| Fluidità e controllo | Cattura ottimizzata, pausa/focus, HUD score e volumi |
+| Vertical slice | Tre livelli: tutorial cattura, spari anticipati, boss differenziato |
+| Varietà | Una pressione anti-attesa e uno/due potenziamenti valutati separatamente |
+| Campagna | Manifest 12 livelli, score cumulativo, bonus e finale |
+| Release | Menu, salvataggi/classifica, pacchetto Windows e crediti verificati |
 
-I test del solver useranno piccole griglie in memoria, senza SDL o ritardi
-reali. I test di integrazione fisseranno esplicitamente tempo e comportamento
-casuale; nessuna dipendenza dalla durata della suite o dall'ordine dei test.
+## Riferimenti arcade e direzione di design
 
-## Regole di lavoro e continuità
+**Qix (1981)**: nemico nel campo, Sparx lungo le linee sicure, avanzamento rapido
+o lento con premio di punteggio; nella versione descritta da Taito la soglia è
+75%. **Volfied (1989)**: conquista all'80% e vulnerabilità di nave/linee incomplete
+quando la barriera è disattivata.
+[Taito — Qix](https://www.taito.co.jp/egret2mini/title),
+[Taito Milestones](https://www.taito.co.jp/taitomilestones/titles),
+[HAMSTER — Volfied](https://www.arcadearchives.com/en/title/aca-301/).
 
-Operazioni Git esclusivamente all'utente, inclusi controlli di stato e diff.
-Aggiornare questo report a ogni task con codice effettivamente completato,
-risultati dei test, limiti aperti e prossimo passo. La roadmap generale è
-approvata; la Fase 1 non è completata con il solo aggiornamento dello sprite.
+La documentazione storica riportata da
+[Arcade Database](https://adb.arcadeitalia.net/dettaglio_mame.php?game_name=qix)
+descrive anche miccia contro le esitazioni, ricompensa della modalità lenta e
+separazione dei due Qix. Sono meccaniche da valutare singolarmente dopo il core.
+
+Direzione approvata: identità vicina a Volfied, con immagine rivelata, boss LUKSO,
+80% e decisioni geometriche. Insegnare prima rischio della scia e rientro,
+anticipare visivamente gli spari, premiare il confinamento. Aggiungere una sola
+pressione contro l'attesa, poi pochi potenziamenti leggibili e l'eventuale doppia
+velocità. Due boss richiederanno BFS da entrambi oppure una condizione esplicita
+di vittoria per separazione: non riutilizzare la BFS da un solo seme.
+
+La strategia attuale resta preparare chiusure corte e sicure, poi confinare il
+boss nella regione piccola per conquistare quella maggiore. Ogni tratto della
+scia è vulnerabile. Il bordo rimane silenzioso: la saldatrice segnala soltanto
+il tracciamento nel campo libero.

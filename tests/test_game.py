@@ -68,7 +68,7 @@ class GameTests(unittest.TestCase):
         self.assertTrue(g.draw_channel.get_busy())
         self.assertEqual(g.sound_draw.get_num_channels(), 1)
         self.assertAlmostEqual(pygame.mixer.music.get_volume(),
-                               upix.DRAW_MUSIC_VOLUME, delta=1 / 128)
+                               0.155, delta=1 / 128)
         # Non riavviare il campione a ogni frame o quando si cambia direzione.
         with mock.patch.object(g, "draw_channel", wraps=g.draw_channel) as channel:
             self.step(None, 5)
@@ -192,18 +192,74 @@ class GameTests(unittest.TestCase):
         g = self.game
         for level in range(1, g.max_levels + 1):
             with self.subTest(level=level):
-                path = upix.ASSET_DIR / "assets" / f"{level:02d}.png"
+                path = upix.ASSET_DIR / "assets" / f"{level:02d}.svg"
                 self.assertTrue(path.is_file())
-                pygame.image.load(path)
                 g.level = level
                 with contextlib.redirect_stdout(io.StringIO()):
                     g.start_level()
+                self.assertEqual(g.background_source, path)
+                self.assertNotEqual(g.hidden_image.get_at((20, 20))[:3], (0, 0, 0))
                 g.draw()
+
+    def test_svg_stays_covered_until_capture_then_reveals_exact_pixels(self):
+        g = self.game
+        self.assertEqual(g.canvas.get_at((405, 594))[:3], (0, 0, 0))
+        self.short_capture()
+        self.assertEqual(g.canvas.get_at((405, 594)), g.hidden_image.get_at((405, 594)))
+        self.assertEqual(g.canvas.get_at((100, 100))[:3], (0, 0, 0))
+
+    def test_boss_wall_regression_is_connected_to_runtime(self):
+        g = self.game
+        for y in range(upix.ROWS):
+            g.grid[100][y] = upix.FILLED
+        g.enemy_x, g.enemy_y = 184, 300
+        g.enemy_vx, g.enemy_vy = 6.6, 0.75
+        self.assertTrue(g._move_boss())
+        self.assertAlmostEqual(g.enemy_x, 179.4)
+        self.assertAlmostEqual(g.enemy_y, 300.75)
+        self.assertAlmostEqual(g.enemy_vx, -6.6)
+        self.assertIsNone(g.physics_error)
+
+    def test_new_player_segment_hitting_boss_loses_one_life_without_capture(self):
+        g = self.game
+        g.enemy_x, g.enemy_y = 400, 580
+        before = [column[:] for column in g.grid]
+        self.step(pygame.K_UP)
+        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.grid, before)
+        self.assertFalse(g.draw_channel.get_busy())
+
+    def test_capture_contact_leaves_canvas_and_grid_unchanged(self):
+        g = self.game
+        g.enemy_x, g.enemy_y = 400, 300
+        g.current_trail = [(200, y) for y in range(1, upix.ROWS - 1)]
+        g.drawing = True
+        before = [column[:] for column in g.grid]
+        pixels = pygame.image.tobytes(g.canvas, "RGB")
+        g.fill_area()
+        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.grid, before)
+        self.assertEqual(pygame.image.tobytes(g.canvas, "RGB"), pixels)
+
+    def test_invalid_physics_suspends_and_restart_level_recovers(self):
+        g = self.game
+        g.enemy_x = 4
+        lives = g.lives
+        self.assertFalse(g._move_boss())
+        self.assertIsNotNone(g.physics_error)
+        self.assertEqual(g.enemy_x, 4)
+        self.assertEqual(g.lives, lives)
+        g.draw()
+        with contextlib.redirect_stdout(io.StringIO()):
+            g.start_level()
+        self.assertIsNone(g.physics_error)
+        self.assertFalse(g.collision_grid.is_blocked(g._boss_body()))
 
     def test_boss_sprite_preserves_alpha_and_aspect_ratio(self):
         image = self.game.boss_img
         self.assertIsNotNone(image)
-        self.assertEqual(image.get_size(), (40, 29))
+        self.assertEqual(image.get_size(), (80, 58))
+        self.assertEqual(self.game.enemy_radius * 2, 30)
         self.assertTrue(image.get_flags() & pygame.SRCALPHA)
         self.assertIsNone(image.get_colorkey())
         self.assertEqual(image.get_at((0, 0)).a, 0)

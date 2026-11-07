@@ -1,8 +1,10 @@
 import pygame
-import collections
 import math
 import random
 from pathlib import Path
+from assets import load_level_background
+from collisions import AABB, CollisionGrid, move_body
+from territory import CaptureContactError, plan_capture
 
 # --- CONFIGURAZIONE ---
 WIDTH, HEIGHT = 800, 600
@@ -11,10 +13,11 @@ COLS = WIDTH // CELL_SIZE
 ROWS = HEIGHT // CELL_SIZE
 ASSET_DIR = Path(__file__).resolve().parent / "public"
 MUSIC_VOLUME = 0.26
-DRAW_MUSIC_VOLUME = 0.10
+DRAW_MUSIC_ATTENUATION = 0.105  # Riduzione dimezzata rispetto alla precedente (0.21).
+DRAW_MUSIC_VOLUME = MUSIC_VOLUME - DRAW_MUSIC_ATTENUATION
 DRAW_VOLUME = 0.80
 BOSS_SPRITE_FILENAME = "boss2.png"
-BOSS_SPRITE_MAX_SIZE = (40, 40)
+BOSS_SPRITE_MAX_SIZE = (80, 80)
 BOSS_COLLISION_RADIUS = 15
 
 # Colori
@@ -120,7 +123,7 @@ class Game:
 
     def _sync_draw_audio(self):
         """La saldatrice segue il tracciamento, mai lo spostamento in zona sicura."""
-        active = (self.drawing and not self.game_over and not self.win
+        active = (self.drawing and not self.game_over and not self.win and not self.physics_error
                   and self.grid[self.player_x][self.player_y] == EMPTY)
         if not active or self.sound_draw is None or self.draw_channel is None:
             self._stop_draw_audio()
@@ -144,25 +147,16 @@ class Game:
 
     def start_level(self):
         self._stop_draw_audio()
+        self.physics_error = None
         self.grid = [[EMPTY for _ in range(ROWS)] for _ in range(COLS)]
+        self.collision_grid = CollisionGrid(self.grid, CELL_SIZE, FILLED)
         
         # --- CARICAMENTO IMMAGINE LIVELLO ---
         # Format 01.png, 02.png ...
-        img_name = f"{self.level:02d}.png"
-        image_path = ASSET_DIR / "assets" / img_name
-        
-        print(f"Caricamento livello {self.level}: {image_path}")
-
-        # Se l'immagine non esiste, crea un gradiente colorato di fallback
-        if image_path.exists():
-            try:
-                self.hidden_image = pygame.image.load(image_path).convert()
-                self.hidden_image = pygame.transform.scale(self.hidden_image, (WIDTH, HEIGHT))
-            except (pygame.error, OSError) as exc:
-                print(f"Errore caricamento immagine: {exc}. Uso fallback.")
-                self.hidden_image = self._create_fallback_image()
-        else:
-            print(f"Immagine non trovata in {image_path}. Uso fallback.")
+        self.hidden_image, self.background_source = load_level_background(
+            ASSET_DIR, self.level, (WIDTH, HEIGHT))
+        print(f"Caricamento livello {self.level}: {self.background_source or 'procedurale'}")
+        if self.hidden_image is None:
             self.hidden_image = self._create_fallback_image()
 
         # --- SURFACE DI GIOCO (CANVAS) ---
@@ -244,45 +238,19 @@ class Game:
 
     def fill_area(self):
         self._stop_draw_audio()
-
-        # 1. Converti la scia corrente in area riempita
-        for (tx, ty) in self.current_trail:
-            self.grid[tx][ty] = FILLED
-            self._reveal_pixel(tx, ty) # Svela l'immagine sotto la scia
-
-        # 2. Flood Fill per trovare DOVE STA il nemico
-        ex_grid = int(self.enemy_x // CELL_SIZE)
-        ey_grid = int(self.enemy_y // CELL_SIZE)
-        
-        ex_grid = max(0, min(ex_grid, COLS-1))
-        ey_grid = max(0, min(ey_grid, ROWS-1))
-
-        visited = set()
-        queue = collections.deque([(ex_grid, ey_grid)])
-        visited.add((ex_grid, ey_grid))
-        
-        while queue:
-            cx, cy = queue.popleft()
-            neighbors = [(cx+1, cy), (cx-1, cy), (cx, cy+1), (cx, cy-1)]
-            for nx, ny in neighbors:
-                if 0 <= nx < COLS and 0 <= ny < ROWS:
-                    if self.grid[nx][ny] != FILLED and (nx, ny) not in visited:
-                        visited.add((nx, ny))
-                        queue.append((nx, ny))
-
-        # 3. Tutto ciò che NON è stato visitato (e non è già pieno) è stato CATTURATO
-        filled_count_this_turn = 0
-        
-        # Ottimizzazione: Scorriamo la griglia. 
-        # Se un punto è vuoto e non è stato raggiunto dal nemico, lo riempiamo.
-        for x in range(COLS):
-            for y in range(ROWS):
-                if self.grid[x][y] == EMPTY and (x, y) not in visited:
-                    self.grid[x][y] = FILLED
-                    self._reveal_pixel(x, y) # <--- MAGIA: Qui sveliamo l'immagine
-                    filled_count_this_turn += 1
-        
-        self.score += filled_count_this_turn * 10
+        try:
+            capture = plan_capture(self.collision_grid, self.current_trail, self._boss_body())
+        except CaptureContactError:
+            self.handle_death()
+            return
+        except ValueError as exc:
+            self._halt_physics(exc)
+            return
+        # Tutti i vincoli sono verificati prima di modificare griglia e canvas.
+        for x, y in capture.cells:
+            self.grid[x][y] = FILLED
+            self._reveal_pixel(x, y)
+        self.score += capture.area_count * 10
         
         # Reset Player
         self.current_trail = []
@@ -300,8 +268,46 @@ class Game:
         if self.percent >= 80.0: # Vinci all'80%
             self.win = True
 
+    def _boss_body(self):
+        return AABB.from_center(self.enemy_x, self.enemy_y,
+                                self.enemy_radius * 2, self.enemy_radius * 2)
+
+    def _halt_physics(self, error):
+        self.physics_error = str(error)
+        self.dx = self.dy = 0
+        self._stop_draw_audio()
+        print(f"Simulazione sospesa: {self.physics_error}")
+
+    def _move_boss(self):
+        trail = frozenset((x, y) for x, y in self.current_trail if self.grid[x][y] == EMPTY)
+        player = None
+        if self.drawing and self.grid[self.player_x][self.player_y] == EMPTY:
+            px, py = self.player_x * CELL_SIZE, self.player_y * CELL_SIZE
+            player = AABB(px - 2, py - 2, px + CELL_SIZE + 2, py + CELL_SIZE + 2)
+        try:
+            result = move_body(self.collision_grid, self._boss_body(),
+                               self.enemy_vx, self.enemy_vy, trail=trail, player=player)
+        except ValueError as exc:
+            self._halt_physics(exc)
+            return False
+        self.enemy_x = result.body.left + result.body.width / 2
+        self.enemy_y = result.body.top + result.body.height / 2
+        self.enemy_vx = 0 if result.locked_x else self.enemy_vx * (-1 if result.reflected_x else 1)
+        self.enemy_vy = 0 if result.locked_y else self.enemy_vy * (-1 if result.reflected_y else 1)
+        if result.hit is not None:
+            self.handle_death()
+            return False
+        return True
+
+    def _new_trail_hits_boss(self):
+        body = self._boss_body()
+        trail = set(self.current_trail)
+        return any(cell in trail and self.grid[cell[0]][cell[1]] == EMPTY
+                   and body.overlaps(self.collision_grid.cell_bounds(*cell))
+                   for cell in self.collision_grid.candidate_cells(body))
+
     def update(self):
-        if self.game_over or self.win:
+        if self.game_over or self.win or self.physics_error:
             self._stop_draw_audio()
             return
 
@@ -366,44 +372,8 @@ class Game:
                     self.handle_death()
                     return
 
-        # Movimento Nemico
-        self.enemy_x += self.enemy_vx
-        self.enemy_y += self.enemy_vy
-
-        # Rimbalzi bordi schermo
-        if self.enemy_x <= self.enemy_radius or self.enemy_x >= WIDTH - self.enemy_radius: 
-            self.enemy_vx *= -1
-        if self.enemy_y <= self.enemy_radius or self.enemy_y >= HEIGHT - self.enemy_radius: 
-            self.enemy_vy *= -1
-
-        # Rimbalzi su Aree Piene (Svelate)
-        ex_g = int(self.enemy_x // CELL_SIZE)
-        ey_g = int(self.enemy_y // CELL_SIZE)
-        
-        # Controllo collisione semplificato al centro del nemico
-        if 0 <= ex_g < COLS and 0 <= ey_g < ROWS:
-            if self.grid[ex_g][ey_g] == FILLED:
-                self.enemy_vx *= -1
-                self.enemy_vy *= -1
-                self.enemy_x += self.enemy_vx * 2
-                self.enemy_y += self.enemy_vy * 2
-
-        # Collisione Nemico -> Scia
-        enemy_rect = pygame.Rect(self.enemy_x - self.enemy_radius, self.enemy_y - self.enemy_radius,
-                                 self.enemy_radius*2, self.enemy_radius*2)
-
-        for (tx, ty) in self.current_trail:
-            trail_rect = self.get_pixel_rect(tx, ty)
-            if trail_rect.colliderect(enemy_rect):
-                self.handle_death()
-                return
-
-        # Collisione Nemico -> Giocatore
-        player_rect = self.get_pixel_rect(self.player_x, self.player_y)
-        if player_rect.inflate(4,4).colliderect(enemy_rect):
-            if self.drawing:
-                self.handle_death()
-                return
+        if not self._move_boss():
+            return
 
         # Input Giocatore
         self._update_player(pygame.key.get_pressed())
@@ -436,6 +406,9 @@ class Game:
                     self.current_trail.append((self.player_x, self.player_y))
                     self.player_x, self.player_y = new_x, new_y
                     self.current_trail.append((new_x, new_y))
+                    if self._new_trail_hits_boss():
+                        self.handle_death()
+                        return
             else:
                 if (new_x, new_y) in self.current_trail[:-1]:
                     self.handle_death() # Snake death
@@ -443,6 +416,10 @@ class Game:
                 
                 self.player_x, self.player_y = new_x, new_y
                 self.current_trail.append((new_x, new_y))
+
+                if self._new_trail_hits_boss():
+                    self.handle_death()
+                    return
 
                 if is_safe_zone:
                     self.fill_area()
@@ -500,6 +477,13 @@ class Game:
             pygame.draw.rect(screen, (0,0,0), (WIDTH//2 - 120, HEIGHT//2, 260, 30))
             screen.blit(txt, (WIDTH//2 - 110, HEIGHT//2 + 5))
 
+        if self.physics_error:
+            pygame.draw.rect(screen, (0, 0, 0), (20, HEIGHT // 2 - 35, WIDTH - 40, 70))
+            screen.blit(font.render("FISICA SOSPESA - Premi R per ripartire dal livello", True,
+                                    (255, 160, 80)), (30, HEIGHT // 2 - 25))
+            screen.blit(font.render(self.physics_error, True, (255, 255, 255)),
+                        (30, HEIGHT // 2 + 5))
+
         pygame.display.flip()
 
 def main():
@@ -520,6 +504,8 @@ def main():
                     if game.game_over and event.key == pygame.K_r:
                         game._stop_draw_audio()
                         game = Game(screen)
+                    elif game.physics_error and event.key == pygame.K_r:
+                        game.start_level()
                     if game.win and event.key == pygame.K_SPACE:
                         game.next_level()
                     if event.key == pygame.K_q:
