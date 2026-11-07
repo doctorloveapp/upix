@@ -23,6 +23,7 @@ Gli asset vengono cercati rispetto a `Upqix89.py`, indipendentemente dalla carte
 | Tasto | Azione |
 | --- | --- |
 | Frecce | Impostano la direzione del cursore |
+| P | Pausa / ripresa |
 | Q | Esce |
 | R | Ricomincia dopo il Game Over; riapre il livello se la fisica è sospesa per uno stato invalido |
 | Spazio | Passa al livello successivo dopo la vittoria |
@@ -32,7 +33,9 @@ Gli asset vengono cercati rispetto a `Upqix89.py`, indipendentemente dalla carte
 - La linea deve tornare a un'area sicura. Sono possibili percorsi ortogonali complessi, non soltanto rettangoli.
 - La zona separata dal boss viene conquistata; quella raggiungibile dal boss rimane aperta.
 - Boss e missili che toccano la scia fanno perdere una vita. Anche un'autointersezione fa perdere una vita.
-- Il territorio conquistato protegge dai missili, con il limite delle collisioni discrete descritto nel report.
+- Il territorio conquistato assorbe i missili al primo contatto, anche con muri di una cella.
+- La perdita del focus mette in pausa; premere P per riprendere. Boss, missili, input di movimento, timer e audio rimangono sospesi durante la pausa.
+- L'HUD mostra il tempo attivo del livello. La pausa non crea arretrati negli spari o nell'AI alla ripresa.
 - Si parte con 3 vite. Dopo una morte si riparte dall'ultimo punto sicuro.
 - La vittoria richiede almeno l'80%. Attualmente la percentuale include il bordo iniziale, ma si aggiorna solo dopo una cattura.
 - Dopo il livello 12 si torna al livello 1 mantenendo le vite. Il punteggio interno si azzera a ogni livello e non è ancora mostrato nell'HUD.
@@ -61,6 +64,7 @@ Se il WAV esiste già, FFmpeg chiede se sovrascriverlo.
 Upix/
 ├── Upqix89.py                # Simulazione, rendering, audio e loop principale
 ├── collisions.py            # Geometria e solver AABB indipendente (Passi 1A–1B)
+├── game_state.py            # Stati e orologio logico che esclude le pause
 ├── territory.py             # Pianificazione validata della conquista (Passo 1C)
 ├── assets.py                # Sfondi SVG e fallback raster al cambio livello
 ├── README.md
@@ -71,11 +75,12 @@ Upix/
 │   ├── test_game.py          # Regressioni con driver SDL dummy
 │   ├── test_collisions.py    # Geometria e solver, incluso muro 200–201 px
 │   ├── test_territory.py     # Catture senza modifiche parziali
+│   ├── test_game_state.py    # Timer deterministico senza attese reali
 │   └── test_assets.py        # SVG, testo, cache e fallback
 ├── tools/
 │   └── benchmark_resolution.py
 └── public/
-    ├── assets/              # Livelli 01.svg … 12.svg; PNG/JPG di fallback
+    ├── assets/              # SVG di copertura e PNG/JPG primarie da svelare
     ├── icon/                # cursor_lukso.png, boss2.png e altre icone
     ├── music/               # Quattro tracce MP3
     └── sounds/              # Effetto originale MP3 e WAV preparato
@@ -83,17 +88,25 @@ Upix/
 
 `copy_images.ps1` è uno script storico che **copia** i JPG con estensione `.png`: non converte il formato. Pygame li decodifica comunque, ma la pipeline va corretta prima della distribuzione. Nessun asset è stato eliminato.
 
-Gli sfondi SVG hanno priorità e vengono rasterizzati con gradienti e testo
-solo al cambio livello, con cache limitata. All'inizio è rivelato soltanto il
-bordo; le catture svelano porzioni dell'SVG corrispondente. Alla vittoria viene
-mostrato lo sfondo completo. Se un SVG non è disponibile si usa PNG/JPG, poi
-il gradiente procedurale. Le proporzioni restano preservate con bande nere
-se il viewport differisce dal rapporto dell'asset.
+I due livelli grafici hanno ruoli distinti:
+
+- **Copertura:** `01.svg` … `12.svg`, visibile subito nel campo non conquistato,
+  al posto del nero. Rasterizzata solo al cambio livello, con cache limitata,
+  gradienti e proporzioni preservate. Le label centrali “Level 1” … “Level 12”
+  sono state eliminate dai file SVG; il livello è indicato nell'HUD.
+- **Immagine primaria:** `01.png` … `12.png` (fallback `.jpg`), nascosta sotto
+  la copertura e adattata all'intero campo come nel prototipo. Le catture ne
+  svelano le porzioni corrispondenti; alla vittoria viene mostrata interamente.
+
+Se manca l'SVG si usa una copertura neutra. Se manca l'immagine primaria si usa
+un'immagine procedurale. I fallback mantengono separati i ruoli: l'SVG non
+diventa mai l'immagine da svelare e la primaria non viene esposta in anticipo.
 
 Il boss usa esclusivamente `boss2.png`: alpha preservato, proporzioni mantenute
-entro 80 × 80 px (80 × 58 per l'asset attuale) e centro agganciato alla posizione
-logica. La hitbox è indipendente dall'immagine. Se l'asset manca o è corrotto,
-viene disegnato un cerchio; il vecchio `boss.png` non viene caricato.
+a dimensioni arrotondate **96 × 70 px**, centro agganciato alla posizione logica.
+L'ultima direttiva dell'utente richiede una **hitbox AABB uguale allo sprite**:
+entrambi usano l'unico parametro `BOSS_SIZE`. Se manca l'asset, il fallback
+grafico mantiene queste dimensioni; il vecchio `boss.png` non viene caricato.
 
 ## Architettura e cattura delle aree
 
@@ -111,11 +124,16 @@ Il flood fill inverso è adatto alle forme concave, purché il boss sia in una c
 Il rendering riutilizza la `canvas`, evitando di ricostruire la maschera ogni frame. La cattura resta sincrona e può superare il budget di un frame: vedere le misure nel report.
 
 I Passi 1B e 1C collegano il solver al movimento del boss: corpo AABB float
-30 × 30 px, substep di massimo 1 px per asse, scansione dell'intero segmento,
+96 × 70 px, substep di massimo 1 px per asse, scansione dell'intero segmento,
 rimbalzi sull'asse d'impatto e consumo del residuo. Il test sul muro
 x=200–201 px passa anche nel runtime. Il solver non legge timer o casualità.
-I missili conservano per ora le collisioni discrete: la loro estensione e il
-loop a tempo fisso restano interventi successivi.
+I missili usano lo stesso contratto di substep e la stessa geometria di griglia,
+con primo contatto sul segmento rettilineo e assorbimento senza rimbalzi.
+La migrazione del movimento a tempo fisso resta un intervento successivo.
+
+Gli stati `PLAYING`, `PAUSED`, `LEVEL_CLEAR`, `GAME_OVER` e `PHYSICS_ERROR`
+sono espliciti. `game_over` e `win` sono proprietà derivate dallo stato.
+La pausa sospende canali e musica senza riavviare i campioni alla ripresa.
 
 ## Verifiche
 
@@ -123,20 +141,25 @@ loop a tempo fisso restano interventi successivi.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-I **70 test** coprono geometria/solver, cattura, audio, respawn, vittoria,
-progressione, 12 sfondi SVG, testo, cache, rendering del boss e fallback.
+I **91 test** coprono geometria/solver, missili continui, stati/pausa, timer,
+cattura, audio, respawn, vittoria,
+progressione, le 12 coppie copertura/immagine primaria senza label, cache, rendering
+del boss e fallback. Una regressione con SVG e PNG di colori distinti verifica
+copertura iniziale, rivelazione e schermata di vittoria.
 I test geometrici e della conquista non richiedono Pygame.
 
 Usano driver SDL `dummy`: controllano mixer e segnale del WAV, **non l'ascolto dagli altoparlanti**. Non certificano l'assenza dei problemi aperti né sostituiscono una partita completa con audio reale.
 
-Per confrontare 800×600 e 1024×1024 senza cambiare la configurazione del gioco:
+Per confrontare le risoluzioni senza cambiare la configurazione del gioco:
 
 ```powershell
-.\.venv\Scripts\python.exe tools/benchmark_resolution.py --repeats 5
+.\.venv\Scripts\python.exe tools/benchmark_resolution.py --repeats 5 --resolutions 800x600 1024x768
 ```
 
-Eseguirlo separatamente dalla suite di test. Il campo resta **800×600**:
-la migrazione a 1024×1024 è rinviata all'ottimizzazione del flood fill.
+Eseguirlo separatamente dalla suite di test. È disponibile anche il profilo
+`1024x1024`. Il campo resta **800×600**. **1024×768 è fattibile** e conserva
+il 4:3, ma richiede il 63,84% di celle in più: prima di aumentare la griglia
+si raccomanda di ottimizzare il flood fill o ingrandire soltanto il viewport.
 
 ## Repository
 

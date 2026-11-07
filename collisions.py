@@ -254,6 +254,21 @@ def _move_axis(grid: CollisionGrid, body: AABB, axis: int, delta: float,
     return body, reflected, False, None
 
 
+def _substep_count(grid: CollisionGrid, body: AABB, dx: float, dy: float,
+                    max_axis_step: float | None = None) -> int:
+    """Unico contratto di validazione e budget per boss e proiettili."""
+    _require_finite(dx, dy)
+    body.translated(dx, dy)
+    step = grid.cell_size / 2 if max_axis_step is None else max_axis_step
+    _require_finite(step)
+    if not 0 < step <= grid.cell_size / 2:
+        raise ValueError("Il substep deve essere positivo e <= metà cella")
+    ratio = max(abs(dx), abs(dy)) / step
+    if not math.isfinite(ratio) or ratio > MAX_SUBSTEPS_PER_TICK:
+        raise PhysicsStateError(f"Spostamento oltre il budget di {MAX_SUBSTEPS_PER_TICK} substep")
+    return max(1, math.ceil(ratio))
+
+
 def move_body(grid: CollisionGrid, body: AABB, dx: float, dy: float, *,
               trail: frozenset[tuple[int, int]] = frozenset(), player: AABB | None = None,
               max_axis_step: float | None = None) -> MotionResult:
@@ -264,18 +279,9 @@ def move_body(grid: CollisionGrid, body: AABB, dx: float, dy: float, *,
     griglia, scia, velocità del chiamante o vite. Input invalidi non vengono
     corretti con teletrasporti. I limiti di lavoro rifiutano il tick intero.
     """
-    _require_finite(dx, dy)
-    body.translated(dx, dy)  # Valida anche la rappresentabilità della destinazione.
-    step = grid.cell_size / 2 if max_axis_step is None else max_axis_step
-    _require_finite(step)
-    if not 0 < step <= grid.cell_size / 2:
-        raise ValueError("Il substep deve essere positivo e <= metà cella")
+    count = _substep_count(grid, body, dx, dy, max_axis_step)
     if grid.is_blocked(body):
         raise PhysicsStateError("Il corpo iniziale interseca terreno solido o confini")
-    ratio = max(abs(dx), abs(dy)) / step
-    if not math.isfinite(ratio) or ratio > MAX_SUBSTEPS_PER_TICK:
-        raise PhysicsStateError(f"Spostamento oltre il budget di {MAX_SUBSTEPS_PER_TICK} substep")
-    count = max(1, math.ceil(ratio))
     if any((x, y) in trail and grid.cells[x][y] != grid.solid_value
            and body.overlaps(grid.cell_bounds(x, y)) for x, y in grid.candidate_cells(body)):
         return MotionResult(body, hit="trail")
@@ -303,3 +309,76 @@ def move_body(grid: CollisionGrid, body: AABB, dx: float, dy: float, *,
         raise PhysicsStateError("Il movimento ha prodotto una penetrazione")
     return MotionResult(body, reflected_x=reflected[0], reflected_y=reflected[1],
                         locked_x=locked[0], locked_y=locked[1], substeps=count)
+
+
+def _sweep_fraction(body: AABB, obstacle: AABB, dx: float, dy: float) -> float | None:
+    """Primo contatto sul segmento rettilineo, tramite intervalli su entrambi gli assi."""
+    entry, exit_time = -math.inf, math.inf
+    for start, end, near, far, delta in (
+            (body.left, body.right, obstacle.left, obstacle.right, dx),
+            (body.top, body.bottom, obstacle.top, obstacle.bottom, dy)):
+        if delta == 0:
+            if end <= near or start >= far:
+                return None
+            continue
+        first, last = (near - end) / delta, (far - start) / delta
+        entry = max(entry, min(first, last))
+        exit_time = min(exit_time, max(first, last))
+    # Un punto di sola tangenza o un contatto da cui ci si allontana non penetra.
+    if entry <= 1 and exit_time > max(entry, 0):
+        return max(entry, 0)
+    return None
+
+
+def move_projectile(grid: CollisionGrid, body: AABB, dx: float, dy: float, *,
+                    trail: frozenset[tuple[int, int]] = frozenset(),
+                    player: AABB | None = None) -> MotionResult:
+    """Proiettile AABB: substep rettilinei e assorbimento al primo impatto.
+
+    Condivide griglia, geometria e limiti del solver del boss. Non rimbalza:
+    hit='wall' assorbe il proiettile, trail/player produce un evento al chiamante.
+    Il percorso diagonale è verificato geometricamente, non con il solo inviluppo.
+    """
+    count = _substep_count(grid, body, dx, dy)
+    # Può essere nato dentro una zona appena conquistata: viene assorbito.
+    if grid.is_blocked(body):
+        return MotionResult(body, hit="wall")
+    for x, y in grid.candidate_cells(body):
+        if (x, y) in trail and body.overlaps(grid.cell_bounds(x, y)):
+            return MotionResult(body, hit="trail")
+    if player is not None and body.overlaps(player):
+        return MotionResult(body, hit="player")
+
+    sx, sy = dx / count, dy / count
+    priority = {"wall": 0, "trail": 1, "player": 2}
+    world = grid.bounds
+    for index in range(count):
+        best_fraction, best_kind = math.inf, None
+
+        def consider(fraction: float | None, kind: str) -> None:
+            nonlocal best_fraction, best_kind
+            if fraction is not None and (best_kind is None or
+                    (fraction, priority[kind]) < (best_fraction, priority[best_kind])):
+                best_fraction, best_kind = fraction, kind
+
+        for delta, front, boundary in (
+                (sx, body.right if sx > 0 else body.left, world.right if sx > 0 else 0),
+                (sy, body.bottom if sy > 0 else body.top, world.bottom if sy > 0 else 0)):
+            if delta:
+                fraction = (boundary - front) / delta
+                if 0 <= fraction <= 1:
+                    consider(fraction, "wall")
+        for x, y in grid.candidate_cells(body.swept_bounds(sx, sy), touching=True):
+            solid = grid.cells[x][y] == grid.solid_value
+            if solid or (x, y) in trail:
+                consider(_sweep_fraction(body, grid.cell_bounds(x, y), sx, sy),
+                         "wall" if solid else "trail")
+        if player is not None:
+            consider(_sweep_fraction(body, player, sx, sy), "player")
+        if best_kind is not None:
+            return MotionResult(body.translated(sx * best_fraction, sy * best_fraction),
+                                hit=best_kind, substeps=index + 1)
+        body = body.translated(sx, sy)
+    if grid.is_blocked(body):
+        raise PhysicsStateError("Il proiettile ha attraversato terreno solido")
+    return MotionResult(body, substeps=count)

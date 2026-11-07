@@ -1,4 +1,4 @@
-r"""Misura le funzioni di produzione alle due risoluzioni, senza modificare i sorgenti.
+r"""Misura le funzioni di produzione a risoluzioni selezionate, senza cambiare i sorgenti.
 
 Eseguire dalla root: .venv\Scripts\python.exe tools/benchmark_resolution.py
 I tempi non sono test con soglie: dipendono dall'hardware e dal carico del PC.
@@ -65,12 +65,15 @@ def measure(width, height, repeats):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--resolutions", nargs="+", default=["800x600", "1024x768", "1024x1024"],
+                        choices=["800x600", "1024x768", "1024x1024"])
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats deve essere positivo")
     pygame.init()
     try:
-        results = [measure(w, h, args.repeats) for w, h in ((800, 600), (1024, 1024))]
+        dimensions = [tuple(map(int, value.split("x"))) for value in args.resolutions]
+        results = [measure(w, h, args.repeats) for w, h in dimensions]
         print(json.dumps(results, indent=2))
     finally:
         pygame.quit()

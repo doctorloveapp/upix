@@ -7,22 +7,139 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 
 - **Tutte le operazioni Git, anche di sola lettura, sono riservate all'utente.**
   Nessun comando Git eseguito in questo task. Regola conservata in `AGENTS.md`.
-- Il piano generale è approvato. **Passi 1A, 1B e 1C implementati**; il collaudo
-  esteso 1D e gli altri interventi della roadmap restano aperti.
+- Il piano generale è approvato. **Collisioni Fase 1 estese ai missili**;
+  avviata la Fase 2 con stati, pausa e orologio logico. Il collaudo esteso da
+  Release Candidate e gli altri interventi della roadmap restano aperti.
 - Campo operativo **800 × 600 px**, celle di 2 px, griglia **400 × 300**.
-- Boss `boss2.png`: **80 × 58 px**, alpha e proporzioni preservati, centro sulla
-  posizione logica. Corpo fisico **AABB 30 × 30 px**, indipendente dalla grafica.
-- I dodici sfondi **01.svg–12.svg** sono caricati e svelati progressivamente.
+- Boss `boss2.png`: **96 × 70 px**, aumento del 20% con arrotondamento ai pixel.
+  **Hitbox AABB 96 × 70 px uguale allo sprite**, secondo l'ultima correzione
+  esplicita dell'utente, che sostituisce la precedente richiesta di mantenere
+  30 × 30. Unico parametro condiviso: `BOSS_SIZE`; regola aggiornata in `AGENTS.md`.
+- **Copertura SVG visibile all'avvio**, **immagine primaria PNG/JPG svelata
+  dalla conquista**: ruoli separati per tutte le dodici coppie di asset.
 - Musica normale **0,26**, musica durante il disegno **0,155**, effetto saldatrice
   **0,80**. L'ultima richiesta dimezza la riduzione precedente, da 0,21 a 0,105:
   la musica è quindi più udibile durante il disegno. Costante dedicata
   `DRAW_MUSIC_ATTENUATION = 0.105`; il volume attenuato è calcolato da quello normale.
-- **70 test superati**, più diagnostica deterministica di 3.000 movimenti del
-  solver senza penetrazioni e controllo visivo degli SVG renderizzati/rivelati.
+- **91 test superati**, controllo del loop con P/ripresa/perdita focus e verifica
+  visiva. La diagnostica storica di 3.000 movimenti riguardava il vecchio corpo:
+  non viene presentata come collaudo esteso del nuovo boss.
 - Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**,
   `resvg_py` **0.5.0**. Dipendenze dichiarate in `requirements.txt`.
 
-## Consegna corrente: Fase 1B e 1C
+## Consegna corrente — Missili continui, stati e pausa
+
+### Dimensioni condivise del boss e label SVG
+
+`BOSS_SIZE = (96, 70)` è usato sia dal ridimensionamento dello sprite sia da
+`_boss_body()`. Il rettangolo fisico comprende l'intero ingombro dello sprite,
+anche i pixel trasparenti. Non esiste più un raggio separato da 15 px. Il fallback
+grafico usa lo stesso ingombro; fonte mancante o corrotta non cambia la fisica.
+
+La variazione della hitbox è intenzionale: cambia distanze di contatto e
+larghezza minima dei passaggi. Il corpo deve rimanere libero in **tutte** le sue
+celle. Non viene ristretto automaticamente per entrare in corridoi piccoli.
+I test di cattura e del muro 200–201 px sono stati aggiornati con partenze valide
+per il nuovo corpo; sprite e AABB vengono confrontati direttamente.
+
+Eliminate materialmente le dodici label centrali dagli SVG `01.svg`–`12.svg`.
+Un test XML verifica che non ci siano elementi `<text>` in nessuno dei file,
+oltre al controllo della rasterizzazione senza testo centrale. Gradiente e
+bordo sono conservati. Il livello rimane indicato nell'HUD.
+
+### Missili — `move_projectile()`
+
+Il solver puro `collisions.py` ora gestisce anche proiettili AABB di **4 × 4 px**,
+conservando la hitbox precedente dei missili e il disegno circolare di raggio 3.
+Boss e missili condividono AABB, griglia, validazione dei dati e calcolo/budget
+dei substep tramite `_substep_count()`.
+
+Ogni substep è al massimo metà cella per componente. Per i missili viene
+verificato il **segmento rettilineo**: l'intersezione temporale degli intervalli
+sui due assi determina il primo contatto con muro, scia o player. L'inviluppo
+seleziona soltanto i candidati; non trasforma una traiettoria diagonale in un
+rettangolo solido o in uno zig-zag.
+
+- Primo muro/confine: missile assorbito, senza rimbalzo.
+- Prima scia/player vulnerabile: una sola perdita di vita e arresto del tick.
+- Pari tempo di contatto: il muro ha priorità e protegge ciò che è oltre.
+- Missile già dentro un'area appena conquistata: assorbito prima del movimento.
+- Percorso privo di urti: spostamento intero, comprese le componenti frazionarie.
+- Budget o dati numerici invalidi: tick rifiutato, nessun salto di celle.
+
+`Game._update_missiles()` prepara i sopravvissuti prima di sostituire la lista.
+È stato aggiunto anche il controllo del tratto appena creato dal player contro
+i missili: non si attende il tick successivo per rilevare una sovrapposizione.
+
+### Stati e tempo logico — `game_state.py`
+
+Un solo stato autorevole: `PLAYING`, `PAUSED`, `LEVEL_CLEAR`, `GAME_OVER`,
+`PHYSICS_ERROR`. `win` e `game_over` sono proprietà derivate; non si conservano
+flag di stato indipendenti che possano contraddirsi.
+
+**P** mette in pausa/riprende. La perdita del focus chiama la pausa; il ritorno
+del focus non riprende automaticamente, per consentire al giocatore di essere
+pronto. In `PAUSED`:
+
+- `update()` non esegue boss, missili, AI, spari o movimento del player.
+- L'input di direzione non modifica il tracciato o la direzione corrente.
+- Il timer attivo del livello, mostrato nell'HUD, resta fermo.
+- `pygame.mixer.pause()` e `music.pause()` sospendono effetti e stream musicale.
+  La ripresa usa `unpause()`: la saldatrice non viene fermata e riavviata.
+
+`SimulationClock` usa una sorgente monotona iniettabile. Conta soltanto i
+millisecondi attivi; alla ripresa riallinea il riferimento reale senza sommare
+la durata della pausa. Spari, cambio direzione del boss e HUD usano lo stesso
+tempo logico. Una pausa lunga non causa spari anticipati o arretrati dell'AI.
+Un nuovo livello azzera il timer dopo il caricamento degli asset; vittoria,
+Game Over ed errore fisico lo fermano. La pausa è idempotente e non si attiva
+sopra uno stato terminale.
+
+Questo intervento **non è ancora la simulazione a passo fisso**: gli spostamenti
+rimangono per tick. Corregge il tempo durante le pause, senza cambiare
+contemporaneamente le velocità del gioco.
+
+### Verifiche della consegna
+
+**91 test**: 73 della baseline adattati alle nuove direttive, 8 sui proiettili,
+4 sull'orologio e 6 di integrazione su missili/pausa. Nessun test temporale usa
+sleep. Verificati pause di 60/120 secondi simulate, ritardo residuo degli spari,
+nessun cambio AI anticipato, audio sospeso/ripreso e campione non riavviato.
+
+Controllato il loop reale con eventi sintetici: P → `PAUSED`, P → `PLAYING`,
+perdita focus → `PAUSED`, Q → chiusura pulita. Verificati visivamente l'HUD col
+timer, lo sprite ingrandito e le schermate di gioco/pausa senza label SVG.
+
+## Correzione preservata — Copertura SVG e immagine primaria
+
+Regressione segnalata dall'utente: il livello partiva ancora nero e le catture
+svelavano l'SVG invece della fotografia/immagine primaria. Il precedente
+caricamento unificato aveva assegnato l'SVG a `hidden_image`: era una separazione
+errata dei ruoli grafici, codificata anche nei precedenti test.
+
+Correzione applicata:
+
+- `load_level_cover()` accetta esclusivamente l'SVG e inizializza direttamente
+  la canvas visibile. L'SVG sostituisce il nero nelle celle ancora libere.
+- `load_level_image()` accetta PNG/JPG e inizializza `hidden_image`. Ripristina
+  l'adattamento all'intero campo del prototipo, senza bande nere aggiuntive.
+- `_reveal_pixel()` continua a copiare dalla primaria. La vittoria mostra la
+  stessa primaria completa; il bordo iniziale, già sicuro, ne rivela i pixel.
+- `Game.cover_source` e `Game.primary_image_source` espongono separatamente le
+  sorgenti. La vecchia proprietà ambigua `background_source` è stata rimossa.
+- Nessuna ulteriore superficie permanente: la canvas contiene inizialmente la
+  copertura e viene aggiornata con i ritagli della primaria. La cache SVG
+  conserva bytes PNG, non una canvas mutabile condivisa tra partite.
+- Fallback indipendenti: SVG assente/corrotto → copertura neutra; primaria
+  assente → immagine procedurale. Nessuno scambio fra i due ruoli.
+
+Verifiche del task precedente: suite completa di **73 test**; sorgenti corrette per tutti i 12
+livelli; caso con copertura rossa e primaria blu che controlla stato iniziale,
+cattura, zona non conquistata e vittoria; PNG corrotto con fallback JPG;
+SVG assente/corrotto e primaria mancante. Controllo visivo con gli asset reali.
+La separazione copertura/primaria rimane verificata nella suite corrente.
+
+## Fase 1B e 1C implementata
 
 ### Solver indipendente — `collisions.py`
 
@@ -68,12 +185,12 @@ per 6,6 px/tick. Input invalidi non vengono riparati con teletrasporti.
 ### Integrazione runtime — `Upqix89.py`
 
 `_move_boss()` chiama il solver, aggiorna il centro float e applica riflessioni
-o vincoli alle velocità. La stessa AABB 30 × 30 serve per muri, scia e player;
+o vincoli alle velocità. La stessa AABB 96 × 70 serve per muri, scia e player;
 il rendering conserva il suo arrotondamento separato. La scia viene interrogata
 localmente tramite un insieme di celle, escludendo quelle già sicure.
 
 AI, spari e timer rimangono eseguiti una volta per aggiornamento, non per
-substep. Il movimento è ancora espresso in pixel/tick: la migrazione al tempo
+substep, usando ora il tempo logico che esclude le pause. Il movimento è ancora espresso in pixel/tick: la migrazione al tempo
 fisso non è inclusa in questa consegna e il gioco completo non è ancora
 indipendente dal frame rate. Il determinismo del solver riguarda gli stessi
 input nello stesso ambiente; non equivale a replay deterministico dell'AI.
@@ -113,7 +230,8 @@ conteggiate nello stesso modo nel punteggio. La loro revisione resta separata.
 
 Il caricamento SVG nativo di Pygame/SDL_image, nell'ambiente verificato, restituiva
 per gli asset presenti una superficie trasparente senza errori. I file contengono
-rettangoli con dimensioni percentuali, gradienti e testo. Non sarebbe sufficiente
+rettangoli con dimensioni percentuali e gradienti; il testo centrale presente
+allora è stato ora rimosso. Non sarebbe sufficiente
 cambiare l'estensione da PNG a SVG e considerare riuscito il caricamento.
 
 Pygame documenta il supporto SVG, mentre SDL_image dichiara un supporto a SVG
@@ -128,36 +246,99 @@ La dipendenza è installata nella `.venv` locale, senza installazioni globali.
 
 ### Pipeline operativa — `assets.py`
 
-1. Cerca `public/assets/{level:02d}.svg` al cambio livello.
+1. Cerca `public/assets/{level:02d}.svg` per la **copertura** al cambio livello.
 2. Rasterizza alla dimensione richiesta. Usa il font incluso in Pygame come
    sostituzione esplicita per il testo, senza scansione dei font di sistema.
 3. Conserva proporzioni, alpha compositato su nero e centratura. Se il viewport
    ha un diverso rapporto di aspetto, applica bande nere.
 4. Memorizza il PNG in una cache limitata a quattro elementi, con chiave che
    include percorso, timestamp e risoluzione. Modificare un SVG invalida la cache.
-5. In caso di errore usa PNG/JPG dello stesso livello, poi lo sfondo procedurale.
-   La sorgente effettiva è esposta da `Game.background_source` e stampata nel log.
+5. Un errore SVG produce una copertura neutra, senza esporre la primaria.
+   Separatamente carica la **primaria** PNG, poi JPG, poi immagine procedurale.
+   Le sorgenti sono esposte da `Game.cover_source` e `Game.primary_image_source`
+   e stampate nel log. La primaria viene adattata all'intero campo.
 
 La rasterizzazione non avviene durante il movimento o durante la BFS. Il frame
-loop riutilizza la canvas: il bordo è inizialmente visibile, il resto rimane
-coperto finché non viene conquistato. Alla vittoria appare tutto lo sfondo.
-Sono stati verificati tutti i livelli **01–12**, il testo “Level 1”, i gradienti
-e la corrispondenza pixel fra porzione rivelata e immagine rasterizzata.
+loop riutilizza la canvas: la copertura SVG è visibile nelle celle libere,
+mentre bordo e celle conquistate mostrano l'immagine primaria. Alla vittoria
+appare la primaria completa. Sono stati verificati tutti i livelli **01–12**,
+i gradienti della copertura e i pixel rivelati dalla primaria.
 
 `start.bat`, locale ed escluso secondo la preferenza dell'utente, ora preferisce
 l'interprete `.venv`. Avviando direttamente il gioco con un altro interprete,
 installarvi prima le dipendenze di `requirements.txt`; in assenza del renderer
-viene esplicitamente usato il fallback raster.
+la copertura è neutra e l'immagine primaria resta disponibile.
 
 ### Workflow degli asset dopo questo task
 
 L'integrazione dei dodici SVG è **completata**. Prossimi interventi: manifest dei
 livelli con immagine/musica/boss/regole; eventuali SVG quadrati se si sceglierà
-un campo 1:1; esportazione e controllo del pacchetto su PC pulito. Non è stata
-modificata o eliminata alcuna risorsa originale. Restano le copie JPG rinominate
+un campo 1:1; esportazione e controllo del pacchetto su PC pulito. I dodici SVG
+sono stati modificati soltanto per eliminare le label centrali; le immagini
+primarie non sono state modificate. Restano le copie JPG rinominate
 PNG create dallo script storico, da razionalizzare in una fase dedicata.
 
-## Analisi tecnica: campo 1024 × 1024 px
+## Analisi aggiornata — Possibilità di 1024 × 768 px
+
+**Sì, 1024 × 768 è fattibile** e conserva il rapporto 4:3 di campo e SVG.
+Il codice operativo rimane a 800 × 600: la richiesta è stata trattata come
+valutazione tecnica, senza attivare una migrazione della griglia non necessaria
+alla consegna su missili e pausa.
+
+| Voce | 800 × 600 | 1024 × 768 |
+| --- | ---: | ---: |
+| Rapporto | 4:3 | 4:3 |
+| Griglia a celle di 2 px | 400 × 300 | 512 × 384 |
+| Celle | 120.000 | 196.608 |
+| Pixel | 480.000 | 786.432 |
+| Tre superfici principali | 5,493 MiB | 9,000 MiB |
+
+Le due dimensioni crescono del 28%; celle e pixel del **63,84%**. Gli SVG 4:3
+possono riempire il quadro senza bande. Le immagini primarie continuano a essere
+adattate all'intero campo.
+
+Benchmark corrente, con boss e hitbox **96 × 70**, eseguito isolatamente dalla
+suite: cinque tagli verticali centrali e 100 chiamate al solver del boss.
+
+| Misura | 800 × 600 | 1024 × 768 |
+| --- | ---: | ---: |
+| Pianificazione + BFS, mediana | 95,677 ms | 172,289 ms |
+| Cattura completa, mediana | 132,045 ms | 221,307 ms |
+| Cattura completa, min–max | 117,535–133,748 ms | 185,739–253,972 ms |
+| Chiamata solver boss, mediana | 2,828 ms | 2,644 ms |
+
+La piccola differenza fra i tempi del solver non indica che un campo più grande
+sia più rapido: la query è locale, mentre i tempi variano col carico. La cattura
+resta invece chiaramente oltre il budget di 16,7 ms a 60 FPS. Queste misure non
+sono confrontabili direttamente con quelle storiche a hitbox 30 × 30.
+
+Per ripetere:
+
+```powershell
+.\.venv\Scripts\python.exe tools/benchmark_resolution.py --repeats 5 --resolutions 800x600 1024x768
+```
+
+Lo strumento consente anche `1024x1024`; senza selezione esplicita misura tutti
+e tre i profili. Nessuna soglia di performance viene trattata come test unitario.
+
+**Raccomandazione:** come prima evoluzione, finestra/viewport 1024 × 768 con
+campo logico 800 × 600 e scala uniforme 1,28. La stessa trasformazione deve
+proiettare grafica, coordinate e hitbox: il boss logico 96 × 70 apparirebbe circa
+123 × 90, con lo stesso ingombro fisico sullo schermo. La BFS resterebbe a
+120.000 celle. Questa separazione del viewport è una proposta, non codice già
+attivato in questo task.
+
+Se si vuole realmente più terreno simulato, adottare 512 × 384 celle dopo
+l'ottimizzazione della cattura e un nuovo collaudo del bilanciamento. A velocità
+invariate aumenterebbe il tempo di attraversamento, e il boss fisso 96 × 70
+occuperebbe una quota relativa minore del campo. Ogni eventuale ridimensionamento
+del boss deve continuare ad aggiornare insieme sprite e AABB.
+
+## Analisi storica: campo 1024 × 1024 px
+
+La sezione seguente conserva la valutazione precedente. Le misure sono anteriori
+all'aumento della hitbox del boss; per lo stato corrente fare riferimento al
+confronto 800 × 600 / 1024 × 768 sopra.
 
 ### Perché oggi 800 × 600
 
@@ -195,7 +376,9 @@ sorgenti o la risoluzione operativa**. Caso: taglio verticale centrale, boss
 nella metà sinistra, circa metà campo conquistato. Cinque ripetizioni per
 risoluzione; 100 chiamate per la misura del solver, senza scia attiva.
 
-Ultima sessione eseguita separatamente dalla suite, su questo PC con SDL dummy:
+Sessione registrata nel task 1B–1C, eseguita separatamente dalla suite su questo
+PC con SDL dummy, prima della correzione dei ruoli copertura/primaria. Il
+benchmark non è stato ripetuto per la sola correzione grafica:
 
 | Misura | 800 × 600 | 1024 × 1024 |
 | --- | ---: | ---: |
@@ -221,7 +404,7 @@ Per ripetere, separatamente da test e altri carichi controllabili:
 ### Impatto sul solver e sulle proporzioni
 
 Il solver esamina una regione **locale** attorno alla AABB e al segmento di
-movimento, non tutta la griglia. A corpo 30 × 30, cella 2 e velocità invariati,
+movimento, non tutta la griglia. A corpo, cella e velocità invariati,
 il numero nominale di celle candidate/substep rimane simile anche su un campo
 più grande. Non ci si aspetta un fattore 2,1845 obbligatorio nel suo costo.
 Le misure locali sono sensibili al carico e alle allocazioni; vanno ripetute su
@@ -229,12 +412,13 @@ hardware target. In `Game` si aggiunge la costruzione dell'insieme della scia,
 che dipende dalla lunghezza del tracciato. Ingrandire anche corpo o velocità
 aumenterebbe rispettivamente candidati o numero di substep.
 
-Il boss 80 × 58 occupa oggi il 10% della larghezza e circa il 9,67% dell'altezza.
-Su 1024 × 1024 scenderebbe a circa 7,81% e 5,66%: apparirebbe relativamente
-più piccolo. Un fattore uniforme 1,28 darebbe circa **102 × 74 px**, mantenendo
+Il boss 96 × 70 occupa oggi il 12% della larghezza e circa l'11,67% dell'altezza.
+Su 1024 × 1024 scenderebbe a circa 9,38% e 6,84%: apparirebbe relativamente
+più piccolo. Un fattore uniforme 1,28 darebbe circa **123 × 90 px**, mantenendo
 la quota di larghezza ma non quella di altezza. Il passaggio da 4:3 a 1:1 non
 consente di mantenere entrambe senza cambiare composizione; deformare lo sprite
-non è la soluzione. La hitbox non deve cambiare automaticamente con il rendering.
+non è la soluzione. Per direttiva dell'utente, qualunque nuova dimensione del
+boss deve essere applicata insieme a sprite e AABB tramite `BOSS_SIZE`.
 
 Gli SVG attuali sono 4:3: il loader li inserisce in un viewport quadrato con
 bande nere, comportamento già verificato a 1024 × 1024. Un campo quadrato pieno
@@ -250,7 +434,7 @@ concreto di latenza eccessiva.
 
 Prima della migrazione:
 
-1. Completare il collaudo 1D e le collisioni dei missili, ancora discrete.
+1. Completare il collaudo esteso da Release Candidate; i missili hanno ora collisioni continue.
 2. Ottimizzare visita con memoria compatta/indici lineari, conteggi incrementali
    e rivelazione per intervalli invece di un blit per cella; confrontare regioni
    catturate con i test attuali.
@@ -264,7 +448,7 @@ Prima della migrazione:
 
 ## Verifiche e limiti residui
 
-Suite: **70 test superati** con:
+Suite: **91 test superati** con:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -273,11 +457,12 @@ Suite: **70 test superati** con:
 Copertura: muro 200–201 px nei due versi e nel runtime, alta velocità, muri
 orizzontali, angoli, tangenze, residuo, rimbalzi multipli, asse vincolato,
 scia/player lungo il percorso, protezione dei muri, input invalidi, ripetibilità,
-densità dei substep nei casi di riferimento, catture concave e senza scritture
-parziali, audio, respawn, vittoria/livelli, tutti gli SVG, gradienti/testo, cache,
-fallback, viewport quadrato e rendering del boss.
+densità dei substep nei casi di riferimento, missili rettilinei/diagonali senza
+tunnelling, catture concave e senza scritture parziali, audio e timer in pausa,
+respawn, vittoria/livelli, tutte le coppie SVG/primaria, gradienti senza label,
+cache, fallback separati, viewport quadrato e rendering del boss.
 
-Diagnostica separata: **3.000 movimenti**, seme 1989 e componenti casuali
+Diagnostica storica sul precedente corpo del boss: **3.000 movimenti**, seme 1989 e componenti casuali
 comprese fra −25 e +25 px/tick, mantenendo sempre il corpo libero. Una sequenza
 più breve è conservata come regressione automatica. Controllo visivo di sfondo
 intero, cattura parziale e inserimento 4:3 nel viewport quadrato.
@@ -288,11 +473,13 @@ certificati tutti i casi patologici di geometria: 1D resta aperto.
 
 Problemi ancora da affrontare:
 
-- **Missili:** collisione discreta, possibile tunnelling attraverso muri sottili.
 - **Tempo fisso:** movimento per frame e timer in millisecondi restano misti;
-  velocità iniziale del boss non ancora uniformata dopo il cambio casuale.
+  i timer ora escludono correttamente le pause, ma lo spostamento non è ancora
+  indipendente dal frame rate. Velocità iniziale del boss non ancora uniformata
+  dopo il cambio casuale.
 - **Cattura:** sincrona e costosa; percentuale iniziale e score da chiarire.
-- **Pausa/focus:** la partita non si sospende perdendo il focus.
+- **Collaudo RC:** sessioni prolungate sul dispositivo reale e bilanciamento del
+  boss più grande, oltre ai test automatici già superati.
 - **Asset:** cursore corrotto non ancora gestito; duplicati grafici e provenienza/
   licenze da inventariare prima della distribuzione pubblica.
 
@@ -306,6 +493,8 @@ Progressione delle consegne:
 | Boss2 | Alpha/proporzioni/centratura e hitbox indipendente, 22 test |
 | Passo 1A | Geometria pura, boss raddoppiato, prima attenuazione, 39 test |
 | Passi 1B–1C e SVG | Solver integrato, conquista validata, 12 SVG, analisi risoluzione e nuova richiesta audio, 70 test |
+| Correzione copertura/primaria | SVG visibile da subito e PNG/JPG svelata, ruoli e fallback separati, 73 test |
+| Chiusura collisioni / avvio Fase 2 | Missili continui, boss e AABB 96×70, stati/pausa/timer e SVG senza label, 91 test |
 
 Il gioco resta un prototipo giocabile con 12 livelli, 3 vite, un boss con
 missili, obiettivo all'80%, movimento ortogonale continuo e morte per
@@ -318,9 +507,11 @@ classifica locale, finale e boss realmente differenziati.
 | 1A | Completata: AABB/griglia e regressione del muro |
 | 1B | Completata: substep, primo contatto e residuo |
 | 1C | Completata: boss runtime e validazione della conquista |
-| 1D | Aperta: collaudo esteso, sessioni reali e casi limite |
-| Consolidamento restante | Missili continui, tempo fisso, percentuali coerenti |
-| Fluidità e controllo | Cattura ottimizzata, pausa/focus, HUD score e volumi |
+| Collisioni missili | Completate: primo impatto continuo e assorbimento |
+| 1D / collaudo RC | Regressioni automatiche estese; sessioni reali prolungate e bilanciamento ancora da completare |
+| Fase 2 — stati/pausa | Implementati: P, focus, timer attivo e sospensione/ripresa audio |
+| Consolidamento restante | Tempo fisso e percentuali coerenti |
+| Fluidità e controllo | Cattura ottimizzata, HUD score e impostazioni dei volumi |
 | Vertical slice | Tre livelli: tutorial cattura, spari anticipati, boss differenziato |
 | Varietà | Una pressione anti-attesa e uno/due potenziamenti valutati separatamente |
 | Campagna | Manifest 12 livelli, score cumulativo, bonus e finale |

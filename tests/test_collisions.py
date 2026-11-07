@@ -7,11 +7,11 @@ import subprocess
 import sys
 import unittest
 
-from collisions import AABB, CollisionGrid, PhysicsStateError, move_body
+from collisions import AABB, CollisionGrid, PhysicsStateError, move_body, move_projectile
 
 
 class AABBTests(unittest.TestCase):
-    def test_boss_body_is_30_pixels_and_keeps_fractional_position(self):
+    def test_body_keeps_requested_dimensions_and_fractional_position(self):
         body = AABB.from_center(184.25, 100.75, 30, 30)
         self.assertEqual((body.left, body.top, body.right, body.bottom),
                          (169.25, 85.75, 199.25, 115.75))
@@ -284,6 +284,86 @@ class MotionTests(unittest.TestCase):
             self.assertFalse(self.grid.is_blocked(body))
             self.assertAlmostEqual(body.width, 30)
             self.assertAlmostEqual(body.height, 30)
+
+
+class ProjectileTests(unittest.TestCase):
+    def setUp(self):
+        self.cells = [[0] * 150 for _ in range(200)]
+        self.cells[100] = [1] * 150
+        self.grid = CollisionGrid(self.cells, 2)
+
+    def body(self, x, y):
+        return AABB.from_center(x, y, 4, 4)
+
+    def test_thin_wall_absorbs_from_both_sides_instead_of_tunnelling(self):
+        for x, dx, front in ((196, 20, 200), (208, -20, 202)):
+            with self.subTest(x=x):
+                result = move_projectile(self.grid, self.body(x, 100), dx, 0)
+                self.assertEqual(result.hit, "wall")
+                self.assertAlmostEqual(result.body.right if dx > 0 else result.body.left, front)
+                self.assertFalse(result.reflected_x)
+
+    def test_high_speed_and_horizontal_wall_stop_at_first_impact(self):
+        result = move_projectile(self.grid, self.body(100, 100), 250, 0)
+        self.assertEqual(result.hit, "wall")
+        self.assertAlmostEqual(result.body.right, 200)
+        for column in self.cells:
+            column[100] = 1
+        result = move_projectile(self.grid, self.body(100, 100), 0, 150)
+        self.assertEqual(result.hit, "wall")
+        self.assertAlmostEqual(result.body.bottom, 200)
+
+    def test_diagonal_contact_keeps_straight_trajectory(self):
+        result = move_projectile(self.grid, self.body(196, 100), 6.6, 2.4)
+        self.assertEqual(result.hit, "wall")
+        self.assertAlmostEqual(result.body.right, 200)
+        self.assertAlmostEqual(result.body.top + 2, 100 + 2 / 6.6 * 2.4)
+
+    def test_diagonal_graze_does_not_collide_with_unused_envelope(self):
+        cells = [[0] * 8 for _ in range(8)]
+        cells[1][4] = 1
+        body = AABB(2, 2, 4, 4)
+        result = move_projectile(CollisionGrid(cells, 2), body, 4, 4)
+        self.assertIsNone(result.hit)
+        self.assertEqual(result.body, body.translated(4, 4))
+
+    def test_tangent_parallel_and_away_are_free_but_towards_wall_hits(self):
+        body = self.body(198, 100)
+        self.assertIsNone(move_projectile(self.grid, body, 0, 5).hit)
+        self.assertIsNone(move_projectile(self.grid, body, -5, 0).hit)
+        self.assertEqual(move_projectile(self.grid, body, 0.1, 0).hit, "wall")
+
+    def test_trail_or_player_before_wall_wins_and_wall_shields_behind_it(self):
+        body = self.body(100, 100)
+        first = move_projectile(self.grid, body, 180, 0, trail=frozenset({(80, 50)}))
+        self.assertEqual(first.hit, "trail")
+        self.assertAlmostEqual(first.body.right, 160)
+        first = move_projectile(self.grid, body, 180, 0, player=AABB(160, 100, 162, 102))
+        self.assertEqual(first.hit, "player")
+        shielded = move_projectile(self.grid, body, 180, 0,
+                                   trail=frozenset({(110, 50)}), player=AABB(220, 100, 222, 102))
+        self.assertEqual(shielded.hit, "wall")
+        tie = move_projectile(self.grid, body, 180, 0, trail=frozenset({(100, 50)}))
+        self.assertEqual(tie.hit, "wall")
+
+    def test_initial_solid_or_world_boundary_absorbs_without_physics_failure(self):
+        self.assertEqual(move_projectile(self.grid, self.body(201, 100), 5, 0).hit, "wall")
+        self.assertEqual(move_projectile(self.grid, self.body(-10, 100), 5, 0).hit, "wall")
+        result = move_projectile(self.grid, self.body(3, 100), -20, 0)
+        self.assertEqual(result.hit, "wall")
+        self.assertAlmostEqual(result.body.left, 0)
+
+    def test_zero_and_fractional_motion_are_repeatable_and_inputs_stay_unchanged(self):
+        body = self.body(100, 100)
+        self.assertEqual(move_projectile(self.grid, body, 0, 0).body, body)
+        first = move_projectile(self.grid, body, 3.7, -1.2)
+        self.assertEqual(first, move_projectile(self.grid, body, 3.7, -1.2))
+        self.assertAlmostEqual(first.body.left, body.left + 3.7)
+        self.assertAlmostEqual(first.body.top, body.top - 1.2)
+        self.assertEqual(body, self.body(100, 100))
+        for value in (math.inf, math.nan, 4097):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                move_projectile(self.grid, body, value, 0)
 
 
 class IndependenceTests(unittest.TestCase):

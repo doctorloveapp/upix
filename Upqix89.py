@@ -2,8 +2,9 @@ import pygame
 import math
 import random
 from pathlib import Path
-from assets import load_level_background
-from collisions import AABB, CollisionGrid, move_body
+from assets import load_level_cover, load_level_image
+from collisions import AABB, CollisionGrid, move_body, move_projectile
+from game_state import GameState, SimulationClock
 from territory import CaptureContactError, plan_capture
 
 # --- CONFIGURAZIONE ---
@@ -17,11 +18,12 @@ DRAW_MUSIC_ATTENUATION = 0.105  # Riduzione dimezzata rispetto alla precedente (
 DRAW_MUSIC_VOLUME = MUSIC_VOLUME - DRAW_MUSIC_ATTENUATION
 DRAW_VOLUME = 0.80
 BOSS_SPRITE_FILENAME = "boss2.png"
-BOSS_SPRITE_MAX_SIZE = (80, 80)
-BOSS_COLLISION_RADIUS = 15
+BOSS_SIZE = (96, 70)  # Unico parametro per sprite e hitbox, come richiesto.
+MISSILE_COLLISION_SIZE = 4
+MISSILE_RENDER_RADIUS = 3
 
 # Colori
-COLOR_BG_COVER = (0, 0, 0)       # Il colore che "copre" l'immagine (Nero)
+COLOR_BG_COVER = (0, 0, 0)       # Copertura di emergenza se manca l'SVG.
 COLOR_PLAYER = (255, 255, 0)     # Giallo
 COLOR_TRAIL = (255, 50, 255)     # Magenta
 COLOR_ENEMY = (255, 0, 0)        # Rosso
@@ -31,9 +33,11 @@ EMPTY = 0
 FILLED = 1
 
 class Game:
-    def __init__(self, screen):
+    def __init__(self, screen, *, time_source=None):
         self.screen = screen
         self.font = pygame.font.SysFont("monospace", 16, bold=True)
+        self.state = GameState.PLAYING
+        self.game_clock = SimulationClock(time_source)
         # --- AUDIO SETUP ---
         self.sound_draw = None
         self.draw_channel = None
@@ -91,14 +95,56 @@ class Game:
             print(f"Sprite boss non disponibile ({boss_path}): {exc}")
             return None
 
-        width, height = image.get_size()
-        max_width, max_height = BOSS_SPRITE_MAX_SIZE
-        scale = min(max_width / width, max_height / height)
-        size = (max(1, round(width * scale)), max(1, round(height * scale)))
         # Nearest-neighbor mantiene i contorni della pixel art e il canale alpha.
-        return pygame.transform.scale(image, size)
+        return pygame.transform.scale(image, BOSS_SIZE)
+
+    @property
+    def game_over(self):
+        return self.state == GameState.GAME_OVER
+
+    @property
+    def win(self):
+        return self.state == GameState.LEVEL_CLEAR
+
+    def _set_state(self, state: GameState):
+        if self.state == state:
+            return
+        previous = self.state
+        self.state = state
+        if state == GameState.PLAYING:
+            self.game_clock.resume()
+            if previous == GameState.PAUSED:
+                self._resume_audio()
+            self._sync_draw_audio()
+        else:
+            self.game_clock.pause()
+            if state == GameState.PAUSED:
+                if pygame.mixer.get_init():
+                    pygame.mixer.pause()
+                    pygame.mixer.music.pause()
+            else:
+                if previous == GameState.PAUSED:
+                    self._resume_audio()
+                self._stop_draw_audio()
+
+    def _resume_audio(self):
+        if pygame.mixer.get_init():
+            pygame.mixer.unpause()
+            pygame.mixer.music.unpause()
+
+    def pause(self):
+        if self.state == GameState.PLAYING:
+            self._set_state(GameState.PAUSED)
+
+    def toggle_pause(self):
+        if self.state == GameState.PAUSED:
+            self._set_state(GameState.PLAYING)
+        else:
+            self.pause()
 
     def handle_death(self):
+        if self.state != GameState.PLAYING:
+            return
         self.lives -= 1
         self._stop_draw_audio()
         self.dx = self.dy = 0
@@ -113,7 +159,7 @@ class Game:
             self.player_y = self.last_safe_y
             
         else:
-            self.game_over = True
+            self._set_state(GameState.GAME_OVER)
 
     def _stop_draw_audio(self):
         if self.draw_channel is not None:
@@ -123,7 +169,9 @@ class Game:
 
     def _sync_draw_audio(self):
         """La saldatrice segue il tracciamento, mai lo spostamento in zona sicura."""
-        active = (self.drawing and not self.game_over and not self.win and not self.physics_error
+        if self.state == GameState.PAUSED:
+            return  # Il canale è sospeso: non fermare o riavviare il campione.
+        active = (self.drawing and self.state == GameState.PLAYING
                   and self.grid[self.player_x][self.player_y] == EMPTY)
         if not active or self.sound_draw is None or self.draw_channel is None:
             self._stop_draw_audio()
@@ -146,6 +194,8 @@ class Game:
             print(f"Musica non disponibile ({music_path}): {exc}")
 
     def start_level(self):
+        if self.state == GameState.PAUSED:
+            self._resume_audio()
         self._stop_draw_audio()
         self.physics_error = None
         self.grid = [[EMPTY for _ in range(ROWS)] for _ in range(COLS)]
@@ -153,17 +203,19 @@ class Game:
         
         # --- CARICAMENTO IMMAGINE LIVELLO ---
         # Format 01.png, 02.png ...
-        self.hidden_image, self.background_source = load_level_background(
+        self.hidden_image, self.primary_image_source = load_level_image(
             ASSET_DIR, self.level, (WIDTH, HEIGHT))
-        print(f"Caricamento livello {self.level}: {self.background_source or 'procedurale'}")
         if self.hidden_image is None:
             self.hidden_image = self._create_fallback_image()
 
         # --- SURFACE DI GIOCO (CANVAS) ---
-        # Questa è la superficie che vediamo. Inizia tutta nera (o colore cover).
-        # Man mano che vinciamo, ci "incolliamo" sopra pezzi di hidden_image.
-        self.canvas = pygame.Surface((WIDTH, HEIGHT))
-        self.canvas.fill(COLOR_BG_COVER)
+        # L'SVG copre il campo; la conquista lo sostituisce con l'immagine primaria.
+        self.canvas, self.cover_source = load_level_cover(ASSET_DIR, self.level, (WIDTH, HEIGHT))
+        if self.canvas is None:
+            self.canvas = pygame.Surface((WIDTH, HEIGHT)).convert()
+            self.canvas.fill(COLOR_BG_COVER)
+        print(f"Livello {self.level}: immagine={self.primary_image_source or 'procedurale'}, "
+              f"copertura={self.cover_source or 'neutra'}")
 
         # Setup bordi iniziali (sveliamo i bordi dell'immagine)
         border_thick = 2
@@ -192,17 +244,14 @@ class Game:
         self.enemy_vx = 3.0 * speed_mult
         self.enemy_vy = 3.0 * speed_mult
         
-        # La fisica resta identica anche se lo sprite non è disponibile.
-        self.enemy_radius = BOSS_COLLISION_RADIUS
-        
         # Boss Behavior
         self.missiles = []
-        self.last_shot_time = pygame.time.get_ticks()
-        self.enemy_change_dir_timer = pygame.time.get_ticks()
+        self.game_clock.reset()
+        self.last_shot_time = 0
+        self.enemy_change_dir_timer = 0
         self.shoot_interval = max(500, 2000 - (self.level * 100)) # Spara più spesso ai livelli alti
 
-        self.game_over = False
-        self.win = False
+        self.state = GameState.PLAYING
         self.score = 0
         self.percent = 0.0
 
@@ -237,6 +286,8 @@ class Game:
         return pygame.Rect(gx * CELL_SIZE, gy * CELL_SIZE, CELL_SIZE, CELL_SIZE)
 
     def fill_area(self):
+        if self.state != GameState.PLAYING:
+            return
         self._stop_draw_audio()
         try:
             capture = plan_capture(self.collision_grid, self.current_trail, self._boss_body())
@@ -266,16 +317,15 @@ class Game:
         self.percent = (total_filled / total_cells) * 100
 
         if self.percent >= 80.0: # Vinci all'80%
-            self.win = True
+            self._set_state(GameState.LEVEL_CLEAR)
 
     def _boss_body(self):
-        return AABB.from_center(self.enemy_x, self.enemy_y,
-                                self.enemy_radius * 2, self.enemy_radius * 2)
+        return AABB.from_center(self.enemy_x, self.enemy_y, *BOSS_SIZE)
 
     def _halt_physics(self, error):
         self.physics_error = str(error)
         self.dx = self.dy = 0
-        self._stop_draw_audio()
+        self._set_state(GameState.PHYSICS_ERROR)
         print(f"Simulazione sospesa: {self.physics_error}")
 
     def _move_boss(self):
@@ -306,12 +356,49 @@ class Game:
                    and body.overlaps(self.collision_grid.cell_bounds(*cell))
                    for cell in self.collision_grid.candidate_cells(body))
 
+    def _missile_body(self, missile):
+        return AABB.from_center(missile['x'], missile['y'],
+                                MISSILE_COLLISION_SIZE, MISSILE_COLLISION_SIZE)
+
+    def _update_missiles(self):
+        trail = frozenset((x, y) for x, y in self.current_trail if self.grid[x][y] == EMPTY)
+        player = None
+        if self.drawing and self.grid[self.player_x][self.player_y] == EMPTY:
+            px, py = self.player_x * CELL_SIZE, self.player_y * CELL_SIZE
+            player = AABB(px, py, px + CELL_SIZE, py + CELL_SIZE)
+        survivors = []
+        try:
+            for missile in self.missiles:
+                result = move_projectile(self.collision_grid, self._missile_body(missile),
+                                         missile['vx'], missile['vy'], trail=trail, player=player)
+                if result.hit == "wall":
+                    continue
+                if result.hit is not None:
+                    self.handle_death()
+                    return False
+                survivors.append({**missile, 'x': result.body.left + result.body.width / 2,
+                                  'y': result.body.top + result.body.height / 2})
+        except ValueError as exc:
+            self._halt_physics(exc)
+            return False
+        self.missiles = survivors
+        return True
+
+    def _new_trail_hits_missile(self):
+        trail = set(self.current_trail)
+        for missile in self.missiles:
+            body = self._missile_body(missile)
+            for cell in self.collision_grid.candidate_cells(body):
+                if (cell in trail and self.grid[cell[0]][cell[1]] == EMPTY
+                        and body.overlaps(self.collision_grid.cell_bounds(*cell))):
+                    return True
+        return False
+
     def update(self):
-        if self.game_over or self.win or self.physics_error:
-            self._stop_draw_audio()
+        if self.state != GameState.PLAYING:
             return
 
-        current_time = pygame.time.get_ticks()
+        current_time = self.game_clock.elapsed_ms
 
         # --- BOSS AI ---
         # 1. Movimento Randomico
@@ -339,38 +426,8 @@ class Game:
                 mvy = (dy / dist) * 5.0
                 self.missiles.append({'x': self.enemy_x, 'y': self.enemy_y, 'vx': mvx, 'vy': mvy})
 
-        # 3. Aggiorna Missili
-        for m in self.missiles[:]:
-            m['x'] += m['vx']
-            m['y'] += m['vy']
-            
-            # Rimuovi se fuori schermo
-            if not (0 <= m['x'] <= WIDTH and 0 <= m['y'] <= HEIGHT):
-                self.missiles.remove(m)
-                continue
-                
-            # Collisione Missile -> Aree Piene (Scudo)
-            mx_g = int(m['x'] // CELL_SIZE)
-            my_g = int(m['y'] // CELL_SIZE)
-            if 0 <= mx_g < COLS and 0 <= my_g < ROWS:
-                if self.grid[mx_g][my_g] == FILLED:
-                    self.missiles.remove(m)
-                    continue
-            
-            # Collisione Missile -> Player
-            m_rect = pygame.Rect(m['x']-2, m['y']-2, 4, 4)
-            p_rect = self.get_pixel_rect(self.player_x, self.player_y)
-            if m_rect.colliderect(p_rect):
-                if self.drawing:
-                    self.handle_death()
-                    return
-            
-            # Collisione Missile -> Scia
-            for (tx, ty) in self.current_trail:
-                t_rect = self.get_pixel_rect(tx, ty)
-                if m_rect.colliderect(t_rect):
-                    self.handle_death()
-                    return
+        if not self._update_missiles():
+            return
 
         if not self._move_boss():
             return
@@ -379,6 +436,8 @@ class Game:
         self._update_player(pygame.key.get_pressed())
 
     def _update_player(self, keys):
+        if self.state != GameState.PLAYING:
+            return
         ndx, ndy = 0, 0
         if keys[pygame.K_UP]: ndy = -1
         elif keys[pygame.K_DOWN]: ndy = 1
@@ -406,7 +465,7 @@ class Game:
                     self.current_trail.append((self.player_x, self.player_y))
                     self.player_x, self.player_y = new_x, new_y
                     self.current_trail.append((new_x, new_y))
-                    if self._new_trail_hits_boss():
+                    if self._new_trail_hits_boss() or self._new_trail_hits_missile():
                         self.handle_death()
                         return
             else:
@@ -417,7 +476,7 @@ class Game:
                 self.player_x, self.player_y = new_x, new_y
                 self.current_trail.append((new_x, new_y))
 
-                if self._new_trail_hits_boss():
+                if self._new_trail_hits_boss() or self._new_trail_hits_missile():
                     self.handle_death()
                     return
 
@@ -429,7 +488,7 @@ class Game:
     def draw(self):
         screen = self.screen
         font = self.font
-        # 1. Disegna il Canvas (che contiene l'immagine svelata e lo sfondo nero)
+        # 1. Canvas: copertura SVG nelle celle libere, immagine primaria nelle conquistate.
         screen.blit(self.canvas, (0, 0))
 
         # 2. Disegna la scia corrente (mentre disegni)
@@ -454,16 +513,21 @@ class Game:
                 center=(round(self.enemy_x), round(self.enemy_y)))
             screen.blit(self.boss_img, boss_rect)
         else:
-            pygame.draw.circle(screen, COLOR_ENEMY,
-                               (round(self.enemy_x), round(self.enemy_y)), self.enemy_radius)
+            bounds = pygame.Rect((0, 0), BOSS_SIZE)
+            bounds.center = (round(self.enemy_x), round(self.enemy_y))
+            pygame.draw.ellipse(screen, COLOR_ENEMY, bounds)
 
         # 5. Disegna Missili
         for m in self.missiles:
-            pygame.draw.circle(screen, (255, 100, 100), (int(m['x']), int(m['y'])), 3)
+            pygame.draw.circle(screen, (255, 100, 100), (round(m['x']), round(m['y'])),
+                               MISSILE_RENDER_RADIUS)
 
         # UI
-        text = font.render(f"LVL {self.level} | LIVES: {self.lives} | CLEARED: {self.percent:.1f}%", True, (255, 255, 255))
-        pygame.draw.rect(screen, (0,0,0), (5, 5, 350, 30)) # Sfondo testo leggibile
+        seconds = self.game_clock.elapsed_ms // 1000
+        hud = (f"LVL {self.level} | LIVES: {self.lives} | CLEARED: {self.percent:.1f}%"
+               f" | TIME: {seconds // 60:02d}:{seconds % 60:02d}")
+        text = font.render(hud, True, (255, 255, 255))
+        pygame.draw.rect(screen, (0,0,0), (5, 5, text.get_width() + 10, 30))
         screen.blit(text, (10, 10))
 
         if self.game_over:
@@ -484,6 +548,12 @@ class Game:
             screen.blit(font.render(self.physics_error, True, (255, 255, 255)),
                         (30, HEIGHT // 2 + 5))
 
+        if self.state == GameState.PAUSED:
+            label = font.render("PAUSA - Premi P per riprendere", True, (255, 255, 255))
+            bounds = label.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+            pygame.draw.rect(screen, (0, 0, 0), bounds.inflate(24, 20))
+            screen.blit(label, bounds)
+
         pygame.display.flip()
 
 def main():
@@ -500,7 +570,11 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                if event.type == pygame.WINDOWFOCUSLOST:
+                    game.pause()
                 if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_p:
+                        game.toggle_pause()
                     if game.game_over and event.key == pygame.K_r:
                         game._stop_draw_audio()
                         game = Game(screen)

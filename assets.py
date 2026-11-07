@@ -9,7 +9,7 @@ import pygame
 
 @lru_cache(maxsize=4)
 def _svg_png(path: str, modified_ns: int, size: tuple[int, int], font_path: str) -> bytes:
-    # Import locale: senza renderer resta disponibile il fallback raster.
+    # Import locale: un errore SVG non impedisce il caricamento dell'immagine primaria.
     import resvg_py
 
     return resvg_py.svg_to_bytes(
@@ -19,14 +19,11 @@ def _svg_png(path: str, modified_ns: int, size: tuple[int, int], font_path: str)
     )
 
 
-def load_level_background(asset_dir: Path, level: int,
-                          size: tuple[int, int]) -> tuple[pygame.Surface | None, Path | None]:
-    """SVG prioritario, poi PNG/JPG; proporzioni preservate su base nera.
-
-    La cache SVG è limitata e invalidata dal timestamp del file. Restituisce
-    anche la sorgente effettiva per diagnostica e verifiche del reveal.
-    """
-    for suffix in (".svg", ".png", ".jpg"):
+def _load_level_asset(asset_dir: Path, level: int, size: tuple[int, int],
+                       suffixes: tuple[str, ...], *, preserve_aspect: bool
+                       ) -> tuple[pygame.Surface | None, Path | None]:
+    """Carica soltanto i formati del ruolo richiesto, senza scambiare i livelli."""
+    for suffix in suffixes:
         path = asset_dir / "assets" / f"{level:02d}{suffix}"
         if not path.is_file():
             continue
@@ -37,9 +34,11 @@ def load_level_background(asset_dir: Path, level: int,
                 image = pygame.image.load(BytesIO(png), "background.png").convert_alpha()
             else:
                 image = pygame.image.load(str(path)).convert_alpha()
-            scale = min(size[0] / image.get_width(), size[1] / image.get_height())
-            target = (max(1, round(image.get_width() * scale)),
-                      max(1, round(image.get_height() * scale)))
+            target = size
+            if preserve_aspect:
+                scale = min(size[0] / image.get_width(), size[1] / image.get_height())
+                target = (max(1, round(image.get_width() * scale)),
+                          max(1, round(image.get_height() * scale)))
             if image.get_size() != target:
                 image = pygame.transform.smoothscale(image, target)
             background = pygame.Surface(size).convert()
@@ -47,5 +46,24 @@ def load_level_background(asset_dir: Path, level: int,
             background.blit(image, image.get_rect(center=(size[0] // 2, size[1] // 2)))
             return background, path
         except (ImportError, pygame.error, OSError, ValueError) as exc:
-            print(f"Sfondo non disponibile ({path}): {exc}")
+            print(f"Risorsa livello non disponibile ({path}): {exc}")
     return None, None
+
+
+def load_level_cover(asset_dir: Path, level: int,
+                      size: tuple[int, int]) -> tuple[pygame.Surface | None, Path | None]:
+    """Copertura SVG visibile subito nelle aree non conquistate.
+
+    Cache limitata e invalidata dal timestamp. Un errore non deve mostrare
+    prematuramente l'immagine primaria: il chiamante usa una copertura neutra.
+    """
+    return _load_level_asset(asset_dir, level, size, (".svg",), preserve_aspect=True)
+
+
+def load_level_image(asset_dir: Path, level: int,
+                      size: tuple[int, int]) -> tuple[pygame.Surface | None, Path | None]:
+    """PNG/JPG da rivelare, adattata all'intero campo come nel prototipo.
+
+    Nessuna sostituzione con l'SVG o banda nera introdotta dal letterboxing.
+    """
+    return _load_level_asset(asset_dir, level, size, (".png", ".jpg"), preserve_aspect=False)
