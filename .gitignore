@@ -1,0 +1,64 @@
+# Python: bytecode, ambienti locali, cache di sviluppo
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Distribuzioni e packaging (incluse build PyInstaller)
+build/
+dist/
+*.egg-info/
+*.egg
+*.spec
+
+# Configurazioni personali degli editor
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Log, file temporanei e copie locali del prototipo
+*.log
+/errorlog.txt
+/test2 - Copia.py
+*.tmp
+*.temp
+*.bak
+
+# Impostazioni private e credenziali locali
+.env
+.env.*
+!.env.example
+/.aws/
+/.codex/
+/.agents/
+
+# Dati generati dal gioco (riservati a salvataggi e classifiche future)
+/saves/
+/user_data/
+
+# Metadati del sistema operativo
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Gli asset public/ e i test fanno parte del progetto: non escluderli.
+
+Documenti
+start.bat

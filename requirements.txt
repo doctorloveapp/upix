@@ -1,0 +1,2 @@
+# Versione verificata con Python 3.13.5 su Windows.
+pygame==2.6.1
