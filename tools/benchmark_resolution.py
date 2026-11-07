@@ -24,12 +24,14 @@ import pygame
 import Upqix89 as upix
 from collisions import move_body
 from territory import plan_capture
+from game_state import GameState
 
 
 def measure(width, height, repeats):
     screen = pygame.display.set_mode((width, height))
     cols, rows = width // upix.CELL_SIZE, height // upix.CELL_SIZE
     planning, capture, motion = [], [], []
+    capture_frames, frame_maxima = [], []
     with mock.patch.multiple(upix, WIDTH=width, HEIGHT=height, COLS=cols, ROWS=rows):
         with contextlib.redirect_stdout(io.StringIO()):
             game = upix.Game(screen)
@@ -45,7 +47,14 @@ def measure(width, height, repeats):
             planning.append((time.perf_counter() - start) * 1000)
             start = time.perf_counter()
             game.fill_area()
+            frames = []
+            while game.state == GameState.CAPTURING:
+                frame_start = time.perf_counter()
+                game.advance_frame()
+                frames.append((time.perf_counter() - frame_start) * 1000)
             capture.append((time.perf_counter() - start) * 1000)
+            capture_frames.append(len(frames))
+            frame_maxima.append(max(frames, default=0))
             assert not game.physics_error
         for _ in range(100):
             start = time.perf_counter()
@@ -58,6 +67,8 @@ def measure(width, height, repeats):
             "capture_samples_ms": [round(value, 3) for value in capture],
             "planning_median_ms": round(statistics.median(planning), 3),
             "capture_median_ms": round(statistics.median(capture), 3),
+            "capture_frames": capture_frames,
+            "capture_frame_max_ms": [round(value, 3) for value in frame_maxima],
             "boss_step_median_ms": round(statistics.median(motion), 3),
             "three_surfaces_MiB": round(surfaces / 1024**2, 3)}
 

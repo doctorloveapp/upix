@@ -2,7 +2,19 @@
 
 Tributo arcade a **Qix (1981)** e **Volfied (1989)**, sviluppato in Python con Pygame. Si conquistano porzioni del campo per rivelare un'immagine, evitando il boss e i suoi missili durante il tracciamento.
 
-Il progetto è un **prototipo giocabile** con 12 livelli. Per analisi del codice, problemi aperti, fonti storiche e piano di sviluppo consultare [REPORT_SVILUPPO.md](REPORT_SVILUPPO.md), aggiornato il 7 novembre 2026.
+Il progetto contiene una **vertical slice di 3 livelli**, una campagna di
+**12 livelli con difficoltà progressiva**, Miccia anti-attesa e bonus di conquista.
+L'avvio passa sempre dal **menu principale**. Run Score, riepiloghi di livello,
+finale di campagna e classifica locale sono implementati.
+Per verifiche, problemi aperti e roadmap consultare
+[REPORT_SVILUPPO.md](REPORT_SVILUPPO.md), aggiornato il 7 novembre 2026.
+
+Finestra **1024×768**, campo logico **800×600**. La cornice originale
+`public/icon/Cornice_gioco.png` circonda il campo, proiettato a **917×688** in
+`(52,66)` senza deformazioni. I valori compaiono nei pannelli Livello, Cattura e Vite;
+score e tempo restano nel bordo inferiore.
+Fisica a **60 tick/s** con accumulatore, rendering limitato a **60 FPS** e cattura
+cooperativa distribuita su più frame.
 
 ## Installazione e avvio
 
@@ -23,10 +35,13 @@ Gli asset vengono cercati rispetto a `Upqix89.py`, indipendentemente dalla carte
 | Tasto | Azione |
 | --- | --- |
 | Frecce | Impostano la direzione del cursore |
+| Su / Giù nel menu | Selezionano Inizia Campagna, Classifica, Esci |
+| Invio | Conferma menu, riepilogo e inserimento nome |
 | P | Pausa / ripresa |
+| Esc | Pausa durante il gioco; torna al menu dalle schermate della classifica |
 | Q | Esce |
-| R | Ricomincia dopo il Game Over; riapre il livello se la fisica è sospesa per uno stato invalido |
-| Spazio | Passa al livello successivo dopo la vittoria |
+| R | Riapre il livello se la fisica è sospesa per uno stato invalido |
+| Spazio | Conferma il riepilogo dopo la vittoria |
 
 - Il movimento continua anche rilasciando la freccia. Una nuova freccia cambia direzione; durante il disegno non è possibile invertire direttamente il senso.
 - Il cursore parte sul bordo sicuro. Entrando nel campo non conquistato crea una scia vulnerabile.
@@ -35,10 +50,88 @@ Gli asset vengono cercati rispetto a `Upqix89.py`, indipendentemente dalla carte
 - Boss e missili che toccano la scia fanno perdere una vita. Anche un'autointersezione fa perdere una vita.
 - Il territorio conquistato assorbe i missili al primo contatto, anche con muri di una cella.
 - La perdita del focus mette in pausa; premere P per riprendere. Boss, missili, input di movimento, timer e audio rimangono sospesi durante la pausa.
-- L'HUD mostra il tempo attivo del livello. La pausa non crea arretrati negli spari o nell'AI alla ripresa.
+- L'HUD mostra il tempo simulato del livello. Timer, spari, AI e movimento usano gli stessi tick; la pausa non crea arretrati alla ripresa.
 - Si parte con 3 vite. Dopo una morte si riparte dall'ultimo punto sicuro.
-- La vittoria richiede almeno l'80%. Attualmente la percentuale include il bordo iniziale, ma si aggiorna solo dopo una cattura.
-- Dopo il livello 12 si torna al livello 1 mantenendo le vite. Il punteggio interno si azzera a ogni livello e non è ancora mostrato nell'HUD.
+- La vittoria richiede dal 70% nel tutorial all'86% nel livello 12, configurabile per livello. La percentuale include il bordo iniziale ed è corretta già all'avvio.
+- Durante `CAPTURING`, calcolo e rivelazione procedono a blocchi; fisica e timer restano sospesi, mentre eventi e rendering continuano. P sospende/riprende anche la cattura.
+- Il player è proporzionato nel box 30×30, centrato sulla cella logica. Il file attuale 1028×1191 produce 26×30; le collisioni mantengono la cella precedente, indipendente dalla grafica. Sul bordo lo sprite può essere ritagliato dal campo.
+- La Miccia conta la permanenza in qualsiasi zona sicura, anche camminando. Nel livello 1 avvisa dopo 8 s e si attiva dopo 12 s: da quel momento il boss spara il doppio più spesso. Nei livelli successivi le soglie si riducono gradualmente. Il taglio sospende il conteggio ma non spegne la pressione; conquista o morte la azzerano.
+- Alla Miccia attiva compare una scossa che insegue il player lungo il confine del territorio sicuro a 150 px/s. Toccarla sul bordo costa una vita. Il confine segue le conquiste, senza BFS nel tick; la scossa resta sul bordo anche se il player entra nel campo o si allontana verso l'interno dell'area sicura. Pausa e cattura la congelano; conquista, morte e nuovo livello la eliminano.
+- Scossa e missili usano `public/icon/miccia.png`, orientato nel verso di movimento. La scossa usa sprite nel box 18×18 e corpo 10×10; i missili mantengono sprite nel box 8×8 e corpo 5,2×5,2.
+- Dopo il livello 12 appare il finale, senza ricominciare il livello 1. Il **Run Score** mostrato nell'HUD somma i risultati conclusi e il punteggio corrente. Il bonus dei livelli vinti viene congelato; solo il bonus del livello in corso continua a scadere.
+
+## Campagna, menu e salvataggi
+
+Alla vittoria appare un riepilogo con conquista, vite, base, bonus, totale del
+livello, tempo e Run Score. Il risultato viene consolidato una sola volta.
+Invio/Spazio continua; al termine della campagna compare il finale.
+Game Over e finale permettono di inserire un nome per la classifica.
+
+La classifica personale viene creata al primo salvataggio in
+`user_data/highscores.json`, esclusa dal versionamento. Conserva dieci risultati,
+nomi fino a 16 caratteri, versione del formato e ID campagna. La scrittura usa
+un file temporaneo e sostituzione atomica: errori o JSON corrotto non cancellano
+automaticamente dati esistenti. Il nome resta nella schermata se il salvataggio
+fallisce e Invio consente di riprovare. Non è un salvataggio della partita in corso.
+
+Per il sito **Sons of Art**: [piano di integrazione Web](docs/WEB_RELEASE.md),
+[contratto API proposto](web/leaderboard.openapi.json) e [schema PostgreSQL](web/schema.sql).
+`BrowserScoreStore` offre lo stesso contratto su storage browser iniettato.
+La classifica pubblica richiede il backend: quella locale non è verificata e
+non viene inviata automaticamente online. Build Web e API non sono deployate.
+
+## Campagna e configurazione
+
+`game_manifest.json` è la fonte di configurazione. `manifest.py` carica e valida
+il documento prima di avviare il gioco. `level_config.py` espone profili immutabili per velocità del boss,
+sprite, intervallo/velocità dei missili, variazioni di direzione, inseguimento,
+soglia di vittoria, musica, suggerimento e configurazioni di Miccia/punteggio. Le velocità sono pixel logici per
+tick a 60 Hz; lo spawn e i cambi direzione usano la stessa magnitudine.
+
+| Livello | Boss px/tick | Missili px/tick | Intervallo base | Conquista |
+| --- | ---: | ---: | ---: | ---: |
+| 01 | 1,6 | 2,0 | 2400 ms | 70% |
+| 02 | 2,0 | 2,3 | 2250 ms | 72% |
+| 03 | 2,4 | 2,6 | 2100 ms | 74% |
+| 04 | 2,8 | 2,9 | 1950 ms | 76% |
+| 05 | 3,2 | 3,2 | 1800 ms | 78% |
+| 06 | 3,6 | 3,5 | 1650 ms | 80% |
+| 07 | 4,0 | 3,8 | 1500 ms | 81% |
+| 08 | 4,4 | 4,1 | 1350 ms | 82% |
+| 09 | 4,8 | 4,4 | 1200 ms | 83% |
+| 10 | 5,2 | 4,7 | 1050 ms | 84% |
+| 11 | 5,6 | 5,0 | 900 ms | 85% |
+| 12 | 6,0 | 5,3 | 750 ms | 86% |
+
+Il manifest esplicita i dodici profili senza salto dopo il tutorial. Configura
+anche percorsi di primarie/coperture, sprite, musiche, Miccia, score, controlli,
+dimensioni, audio, cornice, menu, testi e classifica. Le modifiche si applicano
+al riavvio. I livelli 1–5 usano `boss1.png`–`boss5.png`; 6–12 riusano `boss5.png`
+secondo il documento modificabile. L'inseguimento dei tagli cresce dal
+livello 3; le variazioni di direzione diventano più frequenti. La mira usa la
+posizione logica al lancio, poi il missile prosegue rettilineo.
+
+`LevelConfig.fuse` usa `FuseConfig`: `enabled=False` disattiva la meccanica,
+`warning_ms` e `activation_ms` regolano le soglie, `shot_interval_percent`
+regola la cadenza sotto pressione (50 = metà intervallo). Le soglie scendono
+da 8/12 s a 5,25/7,6 s. La logica è separata in `fuse.py`, senza Pygame o tempo
+reale. Pausa, cattura e stati terminali congelano conteggio e bonus.
+
+La base del punteggio vale **10 punti per cella di area conquistata**, esclusi
+scia e bordo iniziale. Ogni taglio aggiunge al bonus potenziale
+`base_taglio × area_taglio / celle_campo`: a parità di area totale, un taglio
+ampio premia più tagli piccoli. Il bonus complessivo diminuisce linearmente
+con il tempo attivo del livello, fino a zero dopo **180 s nel livello 1** e
+**290 s nel livello 12**. I punti base rimangono acquisiti. L'HUD SCORE somma
+i risultati dei livelli conclusi e il punteggio corrente, incluso il BONUS
+mostrato accanto. Solo il bonus corrente può diminuire; quelli consolidati
+alla vittoria restano acquisiti.
+`LevelConfig.scoring`/`ScoreConfig` regolano punti, percentuale del bonus e limite;
+`area_bonus_percent=0` disattiva il bonus. Il calcolo usa soltanto interi.
+
+La Miccia aumenta il rischio del taglio successivo; i territori sicuri continuano
+ad assorbire i missili. L'attesa prolungata riduce anche il bonus disponibile.
+La taratura completa richiede playtest sul dispositivo reale.
 
 ## Audio della saldatrice
 
@@ -48,7 +141,7 @@ L'effetto è attivo **soltanto mentre il cursore traccia nel campo non conquista
 - `public/sounds/saldatrice.wav`: stessa registrazione preparata per il gioco, con i primi 0,30 s rimossi, guadagno di 6 dB, limitatore e brevi dissolvenze per attenuare i clic.
 - Un canale riservato riproduce il loop senza riavviarlo a ogni frame.
 - Durante il tracciamento la musica passa da `0.26` a **`0.155`**; alla fine torna a `0.26`. L'effetto usa volume `0.80`. `DRAW_MUSIC_ATTENUATION = 0.105` regola la riduzione musicale; `DRAW_MUSIC_VOLUME` viene calcolato dal volume normale. L'ultima modifica dimezza l'abbassamento precedente, rendendo la musica più udibile durante il disegno.
-- Le costanti si trovano all'inizio di `Upqix89.py`. Senza dispositivo audio il gioco continua in silenzio e stampa il motivo.
+- I parametri si trovano nella sezione `audio` di `game_manifest.json`. Senza dispositivo audio il gioco continua in silenzio e stampa il motivo.
 
 Per rigenerare il WAV serve **FFmpeg**, non necessario per giocare:
 
@@ -63,9 +156,22 @@ Se il WAV esiste già, FFmpeg chiede se sovrascriverlo.
 ```text
 Upix/
 ├── Upqix89.py                # Simulazione, rendering, audio e loop principale
+├── application.py            # Menu, riepilogo, finale e inserimento nome
+├── campaign.py               # Risultati immutabili e punteggio cumulativo
+├── highscores.py             # Classifica JSON atomica e adattatore browser
+├── game_manifest.json        # Parametri, asset, controlli e testi
+├── manifest.py               # Validazione e configurazione immutabile
+├── controls.py               # Controlli simbolici del manifest
 ├── collisions.py            # Geometria e solver AABB indipendente (Passi 1A–1B)
-├── game_state.py            # Stati e orologio logico che esclude le pause
-├── territory.py             # Pianificazione validata della conquista (Passo 1C)
+├── game_state.py            # Stati, accumulatore 60 Hz e tempo simulato
+├── viewport.py              # Proiezione uniforme del frame logico sulla finestra
+├── hud.py                   # HUD esterno al campo, con cache del testo
+├── level_config.py          # Configurazioni immutabili dei 12 livelli
+├── fuse.py                  # Miccia e cadenza sotto pressione, a tick fissi
+├── perimeter_threat.py      # Contorni per segmenti e scossa con collisioni continue
+├── sprite_renderer.py       # Sprite orientati con cache delle rotazioni
+├── scoring.py               # Punti base e bonus area/tempo deterministico
+├── territory.py             # Flood fill scanline cooperativo e piano validato
 ├── assets.py                # Sfondi SVG e fallback raster al cambio livello
 ├── README.md
 ├── REPORT_SVILUPPO.md        # Revisione tecnica e roadmap
@@ -75,13 +181,25 @@ Upix/
 │   ├── test_game.py          # Regressioni con driver SDL dummy
 │   ├── test_collisions.py    # Geometria e solver, incluso muro 200–201 px
 │   ├── test_territory.py     # Catture senza modifiche parziali
-│   ├── test_game_state.py    # Timer deterministico senza attese reali
+│   ├── test_game_state.py    # Tick, accumulatore e sovraccarico senza attese reali
+│   ├── test_viewport.py      # Proiezione, frame completo e bande
+│   ├── test_level_config.py  # Tutorial, missili, aggressività e configurazioni
+│   ├── test_fuse.py          # Soglie esatte, disattivazione e persistenza
+│   ├── test_perimeter_threat.py # Contorni, inseguimento e collisioni sul bordo
+│   ├── test_sprite_renderer.py # Rotazione, centratura e cache limitata
+│   ├── test_scoring.py       # Bonus per area, tempo e arrotondamenti
+│   ├── test_campaign.py      # Menu, intera campagna e riepiloghi
+│   ├── test_highscores.py    # Persistenza, errori e storage browser
+│   ├── test_manifest.py      # Validazione e configurazioni
 │   └── test_assets.py        # SVG, testo, cache e fallback
+├── docs/WEB_RELEASE.md       # Strategia di pubblicazione sul sito
+├── web/                     # Contratto API e schema SQL proposti
 ├── tools/
-│   └── benchmark_resolution.py
+│   ├── benchmark_resolution.py
+│   └── benchmark_capture.py  # Budget di cattura e costo CPU del frame completo
 └── public/
     ├── assets/              # SVG di copertura e PNG/JPG primarie da svelare
-    ├── icon/                # cursor_lukso.png, boss2.png e altre icone
+    ├── icon/                # cursor_lukso.png, boss1.png … boss5.png, cornice
     ├── music/               # Quattro tracce MP3
     └── sounds/              # Effetto originale MP3 e WAV preparato
 ```
@@ -92,21 +210,38 @@ I due livelli grafici hanno ruoli distinti:
 
 - **Copertura:** `01.svg` … `12.svg`, visibile subito nel campo non conquistato,
   al posto del nero. Rasterizzata solo al cambio livello, con cache limitata,
-  gradienti e proporzioni preservate. Le label centrali “Level 1” … “Level 12”
+  gradienti e proporzioni preservate con ritaglio centrato. Le label centrali “Level 1” … “Level 12”
   sono state eliminate dai file SVG; il livello è indicato nell'HUD.
 - **Immagine primaria:** `01.png` … `12.png` (fallback `.jpg`), nascosta sotto
-  la copertura e adattata all'intero campo come nel prototipo. Le catture ne
+  la copertura e scalata uniformemente per riempire il campo, con ritaglio centrato.
+  Le catture ne
   svelano le porzioni corrispondenti; alla vittoria viene mostrata interamente.
 
 Se manca l'SVG si usa una copertura neutra. Se manca l'immagine primaria si usa
 un'immagine procedurale. I fallback mantengono separati i ruoli: l'SVG non
 diventa mai l'immagine da svelare e la primaria non viene esposta in anticipo.
+Le primarie 2048×2048 diventano 800×800 e perdono 100 px sopra/sotto per riempire
+il quadro logico 800×600: il loro rapporto originale resta coerente. Anche gli SVG
+usano la politica di riempimento con ritaglio. I file originali non vengono modificati.
 
-Il boss usa esclusivamente `boss2.png`: alpha preservato, proporzioni mantenute
-a dimensioni arrotondate **96 × 70 px**, centro agganciato alla posizione logica.
-L'ultima direttiva dell'utente richiede una **hitbox AABB uguale allo sprite**:
-entrambi usano l'unico parametro `BOSS_SIZE`. Se manca l'asset, il fallback
-grafico mantiene queste dimensioni; il vecchio `boss.png` non viene caricato.
+Ogni livello carica lo sprite configurato, preservando alpha e proporzioni nel
+box base 96×70, poi applica `boss_render_scale=1.4`: **+40%** rispetto alla
+dimensione precedente, con arrotondamento ai pixel interi. Per boss1–boss5 le
+dimensioni effettive sono **134×98**, **134×92**, **134×98**, **134×97**, **113×98**
+(boss5 aggiornato a 1345×1169).
+Il parametro `boss_size` governa sia il rendering sia la **hitbox AABB identica
+allo sprite**. Il centro rimane la posizione logica. Se manca l'asset si usa
+una primitiva 134×98 con la stessa hitbox.
+
+I proiettili usano `missile_size_scale=1.3`: corpo fisico **5,2×5,2** e raggio
+grafico nominale 3,9, arrotondato a **4 px**. Velocità e cadenza restano quelle
+del livello; il solver continua a verificare le celle attraversate.
+Lo sprite energia riempie un box di diametro 8 px preservando le proporzioni.
+
+`perimeter_threat` nel manifest regola abilitazione, velocità in px/s, corpo
+fisico e box grafico della scossa. `assets.energy_sprite` sceglie l'asset comune;
+`energy_visual` regola rotazione, asse originale, passo angolare e fallback.
+Il passo predefinito di 5° limita la cache a 72 rotazioni per taglia.
 
 ## Architettura e cattura delle aree
 
@@ -114,26 +249,52 @@ Il campo 800 × 600 px usa celle da 2 px: **400 × 300 = 120.000 celle**. `grid[
 
 Alla chiusura della linea, `fill_area()`:
 
-1. Valida corpo del boss, scia continua e collegamento delle zone sicure.
-2. Pianifica con `territory.plan_capture()` la BFS inversa, trattando la scia come barriera senza modificare la griglia.
-3. Verifica che la conquista lasci libero l'intero corpo del boss. Un contatto con la nuova scia fa perdere una vita prima di qualsiasi scrittura.
-4. Applica il piano a griglia/canvas e aggiorna percentuale e punteggio.
+1. Entra in `CAPTURING`, interrompendo subito i tick di recupero e la saldatrice.
+2. `CapturePlanner` valida boss e scia e visita la regione raggiungibile dal boss con un flood fill scanline, usando flag compatti e intervalli verticali.
+3. Verifica che il piano lasci libero l'intero boss. Un contatto fa perdere una vita; un errore geometrico sospende la fisica. La griglia attiva rimane intatta.
+4. Prepara una copia di griglia/canvas, rivelando la primaria per strisce; completa con uno scambio di riferimenti e aggiorna percentuale/punteggio una sola volta.
 
 Il flood fill inverso è adatto alle forme concave, purché il boss sia in una cella libera valida e le collisioni mantengano questo vincolo. **Non garantisce da solo che il boss non attraversi muri**. Con più boss occorrerà definire le regole e, se devono restare tutti in gioco, conservare l'unione delle regioni raggiungibili da tutti i boss attivi.
 
-Il rendering riutilizza la `canvas`, evitando di ricostruire la maschera ogni frame. La cattura resta sincrona e può superare il budget di un frame: vedere le misure nel report.
+Il budget cooperativo è **4 ms/frame**, con quanti di 128 celle e un limite di
+256 quanti per frame. Anche copia delle colonne e rivelazione sono distribuite;
+si usa un blit per intervallo, evitando un blit per cella. Il rendering mostra la
+preparazione progressiva e una scia pulsante durante la chiusura. Il commit usa
+conteggi incrementali, senza una nuova scansione completa della percentuale.
+`plan_capture()` resta un wrapper sincrono per test e strumenti, non per il loop.
 
 I Passi 1B e 1C collegano il solver al movimento del boss: corpo AABB float
-96 × 70 px, substep di massimo 1 px per asse, scansione dell'intero segmento,
+dimensionato come lo sprite, substep di massimo 1 px per asse, scansione dell'intero segmento,
 rimbalzi sull'asse d'impatto e consumo del residuo. Il test sul muro
 x=200–201 px passa anche nel runtime. Il solver non legge timer o casualità.
 I missili usano lo stesso contratto di substep e la stessa geometria di griglia,
 con primo contatto sul segmento rettilineo e assorbimento senza rimbalzi.
-La migrazione del movimento a tempo fisso resta un intervento successivo.
 
-Gli stati `PLAYING`, `PAUSED`, `LEVEL_CLEAR`, `GAME_OVER` e `PHYSICS_ERROR`
+`Game.advance_frame()` usa `FixedTimestep` per eseguire zero o più aggiornamenti
+a **60 Hz**, poi il loop disegna e presenta una sola volta. Il credito residuo
+è conservato in unità intere, senza deriva float. `SimulationClock` conta i tick
+eseguiti e governa anche AI, spari e HUD. Il generatore casuale è locale al gioco
+e iniettabile per ripetere una simulazione con seme e input identici.
+
+`Hud.game_area` descrive l'apertura della cornice, misurata sull'asset originale
+1448×1086. `Viewport` vi inscrive il frame logico a `(52, 66, 917, 688)` nella
+finestra 1024×768, usando un buffer riutilizzato. La cornice RGBA e i valori HUD
+sono composti dopo il campo. Restano piccoli margini laterali neri nell'apertura
+per mantenere il 4:3 senza tagliare celle. `RENDER_FPS_LIMIT = 60`
+limita la presentazione; la fisica mantiene il suo accumulatore indipendente.
+
+Pausa, stati terminali e cambio livello azzerano l'accumulatore. Il budget di
+recupero è di 8 tick/frame: dopo stalli più lunghi si scarta il debito intero
+eccedente, diagnosticato da `dropped_ticks`, senza ingrandire il passo fisico.
+In sovraccarico la simulazione rallenta rispetto al tempo reale. `CAPTURING`
+ferma il tempo simulato e azzera gli arretrati all'uscita; nessun recupero del
+tempo speso a pianificare la conquista.
+
+Gli stati `PLAYING`, `CAPTURING`, `PAUSED`, `LEVEL_CLEAR`, `GAME_OVER` e `PHYSICS_ERROR`
 sono espliciti. `game_over` e `win` sono proprietà derivate dallo stato.
 La pausa sospende canali e musica senza riavviare i campioni alla ripresa.
+`CampaignApp` coordina inoltre `MENU`, `HIGHSCORES`, `NAME_ENTRY` e
+`CAMPAIGN_COMPLETE`, creando la simulazione solo all'avvio della campagna.
 
 ## Verifiche
 
@@ -141,12 +302,29 @@ La pausa sospende canali e musica senza riavviare i campioni alla ripresa.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-I **91 test** coprono geometria/solver, missili continui, stati/pausa, timer,
+I **178 test** coprono geometria/solver, missili continui, stati/pausa, timer,
 cattura, audio, respawn, vittoria,
 progressione, le 12 coppie copertura/immagine primaria senza label, cache, rendering
 del boss e fallback. Una regressione con SVG e PNG di colori distinti verifica
 copertura iniziale, rivelazione e schermata di vittoria.
 I test geometrici e della conquista non richiedono Pygame.
+Le nuove regressioni confrontano lo stato completo a 30/60/144 FPS con seme e
+input fissi, inclusi gli urti sul muro x=200–201 px. Sono verificati accumulatore,
+assenza di deriva, sovraccarico, proiezione e loop reale con eventi sintetici.
+Le nuove verifiche includono parametri dei tre livelli, traiettoria del missile,
+inseguimento del boss, cattura a budget diversi, confronto con una BFS di
+riferimento su 25 campi frammentati, commit unico, pausa/cancellazione e HUD esterno.
+Sono inoltre verificati soglie e cadenza della Miccia, reset/disattivazione,
+premio dei tagli ampi, scadenza del bonus, sprite player centrato con collisioni
+invariate, soglie di vittoria e spari di tutti i 12 livelli, e determinismo con
+Miccia attiva e bonus a 30/60/144 FPS.
+Sono verificati anche il menu iniziale, il Run Score senza accrediti duplicati,
+la campagna completa, i riepiloghi, la classifica JSON con scrittura atomica,
+errori e retry, l'adattatore browser e la validazione del manifest.
+La scossa è verificata su contorni concavi, contatti diagonali e 25 griglie
+frammentate, con collisioni continue ai corner, perdita di una sola vita,
+reset dopo conquista, sospensione e determinismo a FPS diversi. Fixture
+asimmetriche verificano orientamento e centratura degli sprite.
 
 Usano driver SDL `dummy`: controllano mixer e segnale del WAV, **non l'ascolto dagli altoparlanti**. Non certificano l'assenza dei problemi aperti né sostituiscono una partita completa con audio reale.
 
@@ -156,10 +334,17 @@ Per confrontare le risoluzioni senza cambiare la configurazione del gioco:
 .\.venv\Scripts\python.exe tools/benchmark_resolution.py --repeats 5 --resolutions 800x600 1024x768
 ```
 
+Per misurare i singoli frame della cattura con rendering e HUD:
+
+```powershell
+.\.venv\Scripts\python.exe tools/benchmark_capture.py
+```
+
 Eseguirlo separatamente dalla suite di test. È disponibile anche il profilo
-`1024x1024`. Il campo resta **800×600**. **1024×768 è fattibile** e conserva
-il 4:3, ma richiede il 63,84% di celle in più: prima di aumentare la griglia
-si raccomanda di ottimizzare il flood fill o ingrandire soltanto il viewport.
+`1024x1024`. Il benchmark varia la **griglia logica**. Il gioco ora usa la finestra
+**1024×768** con griglia **800×600**: non aggiunge celle alla BFS. Una futura griglia
+logica 1024×768 richiederebbe il 63,84% di celle in più, un nuovo controllo del
+budget di cattura e un collaudo del bilanciamento.
 
 ## Repository
 

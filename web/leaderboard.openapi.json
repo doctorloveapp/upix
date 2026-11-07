@@ -1,0 +1,59 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "UPIX 1989 — proposed verified leaderboard", "version": "1.0.0", "description": "Contract proposal; endpoints are not deployed. Never trust a client-supplied score."},
+  "servers": [{"url": "/api/upix/v1"}],
+  "paths": {
+    "/runs": {
+      "post": {
+        "operationId": "startRun",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "additionalProperties": false, "required": ["campaign_id", "manifest_hash"],
+          "properties": {"campaign_id": {"type": "string", "maxLength": 64}, "manifest_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+        }}}},
+        "responses": {"201": {"description": "Server chooses run ID, seed, allowed manifest and short-lived capability.", "content": {"application/json": {"schema": {
+          "type": "object", "required": ["run_id", "seed", "token", "expires_at"],
+          "properties": {"run_id": {"type": "string", "format": "uuid"}, "seed": {"type": "integer", "minimum": 0}, "token": {"type": "string"}, "expires_at": {"type": "string", "format": "date-time"}}
+        }}}}, "400": {"description": "Invalid or unsupported manifest"}, "429": {"description": "Rate limit"}}
+      }
+    },
+    "/runs/{run_id}/finish": {
+      "post": {
+        "operationId": "finishRun",
+        "security": [{"runCapability": []}],
+        "parameters": [{"name": "run_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "additionalProperties": false, "required": ["name", "final_tick", "inputs"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 16},
+            "final_tick": {"type": "integer", "minimum": 0},
+            "inputs": {"type": "array", "maxItems": 10000, "items": {"type": "object", "additionalProperties": false, "required": ["tick", "action"], "properties": {
+              "tick": {"type": "integer", "minimum": 0}, "action": {"type": "string", "enum": ["up", "down", "left", "right"]}
+            }}}
+          }
+        }}}},
+        "responses": {"202": {"description": "Verification queued; retrying the same run is idempotent"}, "401": {"description": "Invalid/expired capability"}, "409": {"description": "Run state or payload conflict"}, "413": {"description": "Payload too large"}}
+      }
+    },
+    "/runs/{run_id}": {
+      "get": {
+        "operationId": "getRunStatus", "security": [{"runCapability": []}],
+        "parameters": [{"name": "run_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}],
+        "responses": {"200": {"description": "Current validation state", "content": {"application/json": {"schema": {
+          "type": "object", "required": ["status"], "properties": {"status": {"type": "string", "enum": ["started", "pending", "verified", "rejected"]}, "score": {"type": "integer", "minimum": 0}}
+        }}}}, "401": {"description": "Invalid capability"}, "404": {"description": "Unknown run"}}
+      }
+    },
+    "/leaderboard": {
+      "get": {
+        "operationId": "getVerifiedLeaderboard",
+        "parameters": [{"name": "campaign_id", "in": "query", "required": true, "schema": {"type": "string", "maxLength": 64}}],
+        "responses": {"200": {"description": "Only server-verified scores, in stable ranking order", "content": {"application/json": {"schema": {
+          "type": "object", "required": ["entries"], "properties": {"entries": {"type": "array", "maxItems": 10, "items": {
+            "type": "object", "required": ["name", "score", "levels_completed"], "properties": {"name": {"type": "string"}, "score": {"type": "integer", "minimum": 0}, "levels_completed": {"type": "integer", "minimum": 0}}
+          }}}
+        }}}}}
+      }
+    }
+  },
+  "components": {"securitySchemes": {"runCapability": {"type": "http", "scheme": "bearer"}}}
+}

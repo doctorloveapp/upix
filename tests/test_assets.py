@@ -113,11 +113,46 @@ class BackgroundTests(unittest.TestCase):
             self.assertEqual(result.get_at((50, 50))[:3], (255, 0, 0))
             self.assertEqual(result.get_at((50, 99))[:3], (255, 0, 0))
 
-    def test_real_svg_fits_1024_square_without_stretching(self):
+    def test_real_svg_covers_1024_square_without_stretching_or_bands(self):
         root = Path(__file__).resolve().parents[1] / "public"
         result, source = load_level_cover(root, 1, (1024, 1024))
         self.assertEqual(source.suffix, ".svg")
         self.assertEqual(result.get_size(), (1024, 1024))
-        self.assertEqual(result.get_at((512, 0))[:3], (0, 0, 0))
-        self.assertEqual(result.get_at((512, 1023))[:3], (0, 0, 0))
+        self.assertNotEqual(result.get_at((512, 0))[:3], (0, 0, 0))
+        self.assertNotEqual(result.get_at((512, 1023))[:3], (0, 0, 0))
         self.assertNotEqual(result.get_at((512, 512))[:3], (0, 0, 0))
+
+    def test_wide_and_tall_primary_are_center_cropped_with_undistorted_markers(self):
+        for size in ((200, 100), (100, 200)):
+            with self.subTest(size=size), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root / 'assets').mkdir()
+                image = pygame.Surface(size)
+                image.fill((255, 0, 0))
+                center = image.get_rect().center
+                middle = pygame.Rect(0, 0, 100, 100)
+                middle.center = center
+                image.fill((0, 0, 255), middle)
+                marker = pygame.Rect(0, 0, 40, 40)
+                marker.center = center
+                image.fill((255, 255, 255), marker)
+                pygame.image.save(image, str(root / 'assets' / '01.png'))
+                result, _ = load_level_image(root, 1, (100, 100))
+                self.assertEqual(result.get_at((0, 0))[:3], (0, 0, 255))
+                white = pygame.mask.from_threshold(result, (255, 255, 255), (1, 1, 1, 255))
+                self.assertEqual(white.get_bounding_rects(), [pygame.Rect(30, 30, 40, 40)])
+
+    def test_svg_cover_crops_source_aspect_before_raster_viewport_can_add_bands(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'assets').mkdir()
+            (root / 'assets' / '01.svg').write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">'
+                '<rect width="200" height="100" fill="red"/>'
+                '<rect x="50" width="100" height="100" fill="blue"/>'
+                '<rect x="80" y="30" width="40" height="40" fill="white"/></svg>',
+                encoding='utf-8')
+            result, _ = load_level_cover(root, 1, (100, 100))
+            self.assertEqual(result.get_at((0, 0))[:3], (0, 0, 255))
+            white = pygame.mask.from_threshold(result, (255, 255, 255), (1, 1, 1, 255))
+            self.assertEqual(white.get_bounding_rects(), [pygame.Rect(30, 30, 40, 40)])

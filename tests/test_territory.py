@@ -1,9 +1,11 @@
 """Conquiste pianificate senza mutazioni parziali o boss murati."""
 
 import unittest
+from collections import deque
+import random
 
 from collisions import AABB, CollisionGrid, PhysicsStateError
-from territory import CaptureContactError, plan_capture
+from territory import CaptureContactError, CapturePlanner, plan_capture
 
 
 def board(cols=50, rows=40):
@@ -59,3 +61,52 @@ class CaptureTests(unittest.TestCase):
             with self.subTest(trail=trail), self.assertRaises(PhysicsStateError):
                 plan_capture(self.grid, trail, self.boss)
         self.assertEqual(self.cells, before)
+
+    def test_chunk_sizes_produce_identical_plans_without_any_grid_writes(self):
+        before = [column[:] for column in self.cells]
+        reference = plan_capture(self.grid, self.trail, self.boss)
+        for budget in (1, 17, 128, 4096):
+            planner = CapturePlanner(self.grid, self.trail, self.boss)
+            frames = 1
+            while not planner.advance(budget):
+                frames += 1
+                self.assertEqual(self.cells, before)
+            self.assertEqual(planner.result, reference)
+            self.assertEqual(planner.result.cell_count, len(list(planner.result.cells)))
+            self.assertEqual(self.cells, before)
+            if budget == 1:
+                self.assertGreater(frames, 100)
+
+    def test_scanline_matches_independent_bfs_on_seeded_fragmented_boards(self):
+        rng = random.Random(1989)
+        for case in range(25):
+            cells = board()
+            for x in range(2, 48):
+                for y in range(2, 38):
+                    if x != 30 and (x, y) != (10, 20) and rng.random() < 0.15:
+                        cells[x][y] = 1
+            grid = CollisionGrid(cells, 2)
+            boss = AABB.from_center(21, 41, 2, 2)
+            wall = set(self.trail)
+            reached = {(10, 20)}
+            queue = deque(reached)
+            while queue:
+                x, y = queue.popleft()
+                for cell in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
+                    nx, ny = cell
+                    if (0 <= nx < 50 and 0 <= ny < 40 and not cells[nx][ny]
+                            and cell not in wall and cell not in reached):
+                        reached.add(cell)
+                        queue.append(cell)
+            expected = {(x, y) for x in range(50) for y in range(40)
+                        if not cells[x][y] and (x, y) not in reached}
+            plan = plan_capture(grid, self.trail, boss)
+            with self.subTest(case=case):
+                self.assertEqual(set(plan.cells), expected)
+                self.assertEqual(plan.area_count, len(expected - wall))
+
+    def test_chunk_budget_must_be_positive_integer(self):
+        planner = CapturePlanner(self.grid, self.trail, self.boss)
+        for budget in (0, -1, 1.5, True):
+            with self.subTest(budget=budget), self.assertRaises(ValueError):
+                planner.advance(budget)

@@ -51,6 +51,7 @@ dist/
 # Dati generati dal gioco (riservati a salvataggi e classifiche future)
 /saves/
 /user_data/
+/highscores.json
 
 # Metadati del sistema operativo
 .DS_Store
