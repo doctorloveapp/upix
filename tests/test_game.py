@@ -200,6 +200,51 @@ class GameTests(unittest.TestCase):
                     g.start_level()
                 g.draw()
 
+    def test_boss_sprite_preserves_alpha_and_aspect_ratio(self):
+        image = self.game.boss_img
+        self.assertIsNotNone(image)
+        self.assertEqual(image.get_size(), (40, 29))
+        self.assertTrue(image.get_flags() & pygame.SRCALPHA)
+        self.assertIsNone(image.get_colorkey())
+        self.assertEqual(image.get_at((0, 0)).a, 0)
+        self.assertGreater(pygame.mask.from_surface(image).count(), 0)
+
+    def test_boss_render_is_centered_at_rounded_physics_position(self):
+        g = self.game
+        g.enemy_x, g.enemy_y = 400.25, 300.75
+        background = (17, 23, 31)
+        g.canvas.fill(background)
+        g.draw()
+        bounds = g.boss_img.get_rect(center=(400, 301))
+        expected = pygame.Surface(g.boss_img.get_size()).convert()
+        expected.fill(background)
+        expected.blit(g.boss_img, (0, 0))
+        actual = self.screen.subsurface(bounds)
+        self.assertEqual(pygame.image.tobytes(actual, "RGB"),
+                         pygame.image.tobytes(expected, "RGB"))
+        # Il rendering non deve quantizzare la posizione della simulazione.
+        self.assertEqual((g.enemy_x, g.enemy_y), (400.25, 300.75))
+
+    def test_unavailable_boss_sprite_keeps_physics_and_uses_primitive(self):
+        # Il vecchio boss non deve diventare un fallback implicito.
+        with tempfile.TemporaryDirectory() as folder:
+            icons = Path(folder) / "icon"
+            icons.mkdir()
+            pygame.image.save(pygame.Surface((8, 8)), str(icons / "boss.png"))
+            for corrupt in (False, True):
+                with self.subTest(corrupt=corrupt):
+                    if corrupt:
+                        (icons / "boss2.png").write_bytes(b"invalid PNG")
+                    with mock.patch.object(upix, "ASSET_DIR", Path(folder)):
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            g = upix.Game(self.screen)
+                    self.assertIsNone(g.boss_img)
+                    self.assertEqual(g.enemy_radius, self.game.enemy_radius)
+                    g.draw()
+                    self.assertEqual(self.screen.get_at((400, 300))[:3],
+                                     upix.COLOR_ENEMY)
+                    g._stop_draw_audio()
+
     def test_assets_load_from_another_working_directory(self):
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as folder:

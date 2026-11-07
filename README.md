@@ -1,138 +1,114 @@
-# UPIX 1989 - Documentazione Tecnica e Manuale Utente
+# UPIX 1989
 
-## Introduzione
-**UPIX 1989** è un tributo moderno ai classici arcade *Qix* e *Volfied*, sviluppato in Python con `pygame`. Il progetto combina meccaniche retrò con un'architettura software solida, offrendo un'esperienza di gioco fluida e reattiva.
+Tributo arcade a **Qix (1981)** e **Volfied (1989)**, sviluppato in Python con Pygame. Si conquistano porzioni del campo per rivelare un'immagine, evitando il boss e i suoi missili durante il tracciamento.
 
----
+Il progetto è un **prototipo giocabile** con 12 livelli. Per analisi del codice, problemi aperti, fonti storiche e piano di sviluppo consultare [REPORT_SVILUPPO.md](REPORT_SVILUPPO.md), aggiornato il 7 novembre 2026.
 
-## 🎮 Guida Rapida
+## Installazione e avvio
 
-### Prerequisiti
-*   **Python 3.x** installato sul sistema.
-*   Libreria **Pygame**.
+Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**. Altri sistemi o versioni di Python richiedono una verifica dedicata.
 
-### Installazione
-1.  Clona o scarica la cartella del progetto.
-2.  Apri il terminale nella cartella del progetto.
-3.  Installa le dipendenze:
-    ```bash
-    pip install pygame
-    ```
-
-### Avvio del Gioco
-Esegui il file principale:
-```bash
-python Upqix89.py
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe Upqix89.py
 ```
 
----
+Se Python è disponibile tramite il launcher Windows, usare `py -3` al posto di `python` per creare l'ambiente. Con Pygame già installato nell'interprete predefinito basta `python Upqix89.py`.
 
-## 🕹️ Comandi di Gioco
+Gli asset vengono cercati rispetto a `Upqix89.py`, indipendentemente dalla cartella di avvio. `start.bat`, se presente localmente, salva l'output in `errorlog.txt` e mostra eventuali errori.
+
+## Comandi e regole attuali
 
 | Tasto | Azione |
-| :--- | :--- |
-| **Frecce Direzionali** | Muovi il cursore (Disegna linee) |
-| **Q** | Esci dal gioco |
-| **R** | Riavvia il gioco (nella schermata Game Over) |
-| **SPAZIO** | Passa al livello successivo (nella schermata Vittoria) |
+| --- | --- |
+| Frecce | Impostano la direzione del cursore |
+| Q | Esce |
+| R | Ricomincia dopo il Game Over |
+| Spazio | Passa al livello successivo dopo la vittoria |
 
----
+- Il movimento continua anche rilasciando la freccia. Una nuova freccia cambia direzione; durante il disegno non è possibile invertire direttamente il senso.
+- Il cursore parte sul bordo sicuro. Entrando nel campo non conquistato crea una scia vulnerabile.
+- La linea deve tornare a un'area sicura. Sono possibili percorsi ortogonali complessi, non soltanto rettangoli.
+- La zona separata dal boss viene conquistata; quella raggiungibile dal boss rimane aperta.
+- Boss e missili che toccano la scia fanno perdere una vita. Anche un'autointersezione fa perdere una vita.
+- Il territorio conquistato protegge dai missili, con il limite delle collisioni discrete descritto nel report.
+- Si parte con 3 vite. Dopo una morte si riparte dall'ultimo punto sicuro.
+- La vittoria richiede almeno l'80%. Attualmente la percentuale include il bordo iniziale, ma si aggiorna solo dopo una cattura.
+- Dopo il livello 12 si torna al livello 1 mantenendo le vite. Il punteggio interno si azzera a ogni livello e non è ancora mostrato nell'HUD.
 
-## ⚙️ Meccaniche di Gioco
+## Audio della saldatrice
 
-*   **Obiettivo**: Rivela almeno l'**80%** dell'immagine di sfondo disegnando rettangoli chiusi.
-*   **Disegno**: Quando ti muovi fuori dalla zona sicura (l'area già svelata), tracci una linea. Chiudendo la linea su un'altra zona sicura, catturi l'area.
-*   **Nemici**:
-    *   **Boss**: Rimbalza nell'area non svelata. Se tocca la tua scia mentre stai disegnando, perdi una vita.
-    *   **Missili**: Il boss spara missili verso di te. I missili si infrangono contro le aree già svelate (scudo).
-*   **Vite**: Hai 3 vite a disposizione.
+L'effetto è attivo **soltanto mentre il cursore traccia nel campo non conquistato**. È spento sul bordo e nelle aree sicure, alla chiusura della linea, alla morte, al cambio livello e all'uscita.
 
----
+- `public/sounds/saldatrice.mp3`: registrazione originale, mantenuta come fallback.
+- `public/sounds/saldatrice.wav`: stessa registrazione preparata per il gioco, con i primi 0,30 s rimossi, guadagno di 6 dB, limitatore e brevi dissolvenze per attenuare i clic.
+- Un canale riservato riproduce il loop senza riavviarlo a ogni frame.
+- Durante il tracciamento la musica passa da `0.26` a `0.10`; alla fine torna a `0.26`. L'effetto usa volume `0.80`.
+- Le costanti si trovano all'inizio di `Upqix89.py`. Senza dispositivo audio il gioco continua in silenzio e stampa il motivo.
 
-## 📂 Struttura del Progetto
+Per rigenerare il WAV serve **FFmpeg**, non necessario per giocare:
 
-Il gioco richiede una struttura di cartelle specifica per gli asset multimediali. Assicurati che la cartella `public` sia organizzata come segue:
-
-```text
-root/
-├── Upqix89.py            # Codice sorgente principale
-├── public/
-│   ├── assets/         # Immagini dei livelli (01.png, 02.png...)
-│   ├── icon/           # Icone UI (cursor_lukso.png, boss.png)
-│   ├── music/          # Tracce audio (01pink.mp3, ...)
-│   └── sounds/         # Effetti sonori (saldatrice.mp3)
+```powershell
+ffmpeg -i public/sounds/saldatrice.mp3 -af "atrim=start=0.30:end=8.55,asetpts=PTS-STARTPTS,volume=2,alimiter=limit=0.95:level=false,afade=t=in:d=0.005,afade=t=out:st=8.24:d=0.01" -c:a pcm_s16le public/sounds/saldatrice.wav
 ```
 
-> **Nota**: Il sistema include un meccanismo di **fallback**. Se mancano le immagini dei livelli, il gioco genererà automaticamente sfondi procedurali per evitare crash.
+Se il WAV esiste già, FFmpeg chiede se sovrascriverlo.
 
----
+## Struttura
 
-## 📘 Manuale di Sviluppo: Il Segreto del "Qix Perfetto"
+```text
+Upix/
+├── Upqix89.py                # Simulazione, rendering, audio e loop principale
+├── README.md
+├── REPORT_SVILUPPO.md        # Revisione tecnica e roadmap
+├── requirements.txt
+├── .gitignore
+├── tests/
+│   └── test_game.py          # Regressioni con driver SDL dummy
+└── public/
+    ├── assets/              # Livelli 01.png … 12.png e sorgenti grafici
+    ├── icon/                # cursor_lukso.png, boss2.png e altre icone
+    ├── music/               # Quattro tracce MP3
+    └── sounds/              # Effetto originale MP3 e WAV preparato
+```
 
-Questa sezione è dedicata agli sviluppatori che vogliono capire **come** abbiamo risolto la sfida più grande nella programmazione di un clone di Qix: il riempimento delle aree.
+`copy_images.ps1` è uno script storico che **copia** i JPG con estensione `.png`: non converte il formato. Pygame li decodifica comunque, ma la pipeline va corretta prima della distribuzione. Nessun asset è stato eliminato.
 
-### La Sfida Tecnica
-In *Qix*, il giocatore può disegnare forme arbitrariamente complesse (spirali, forme a U, zig-zag). L'approccio ingenuo che molti tentano è:
-1.  Registrare i punti del tracciato del giocatore.
-2.  Cercare di calcolare geometricamente il poligono chiuso.
-3.  Riempire quel poligono.
+Il boss usa esclusivamente `boss2.png`: alpha preservato, proporzioni mantenute
+entro 40 × 40 px (40 × 29 per l'asset attuale) e centro agganciato alla posizione
+logica. La hitbox è indipendente dall'immagine. Se l'asset manca o è corrotto,
+viene disegnato un cerchio; il vecchio `boss.png` non viene caricato.
 
-**Perché fallisce**: Questo approccio è un incubo matematico. Gestire auto-intersezioni, forme concave e capire "da che parte sta il dentro" porta quasi sempre a bug dove il gioco riempie l'area sbagliata o il nemico rimane bloccato nel muro.
+## Architettura e cattura delle aree
 
-### La Nostra Soluzione: "Inverse Flood Fill"
-Invece di chiederci "Cosa ha disegnato il giocatore?", ci chiediamo: **"Dove può andare il nemico?"**.
+Il campo 800 × 600 px usa celle da 2 px: **400 × 300 = 120.000 celle**. `grid[x][y]` contiene `EMPTY` o `FILLED`; la scia in corso è conservata separatamente.
 
-Ecco l'algoritmo esatto che usiamo (visibile nella funzione `fill_area`):
+Alla chiusura della linea, `fill_area()`:
 
-1.  **Il Muro**: Quando il giocatore chiude un tracciato, quella linea diventa immediatamente un "Muro" (`FILLED`) nella griglia logica.
-2.  **Il Secchiello (Flood Fill)**: Immagina di versare un secchio di vernice virtuale partendo dalla posizione esatta del Boss.
-3.  **L'Espansione**: La "vernice" si espande in tutte le direzioni, fermandosi solo quando incontra un Muro o il bordo dello schermo.
-4.  **L'Inversione (Il Trucco)**:
-    *   Tutte le celle toccate dalla vernice sono "Zona Libera" (dove il Boss può muoversi).
-    *   Tutte le celle che sono rimaste asciutte (e non erano già muri) significano una sola cosa: **sono state isolate dal giocatore**.
-5.  **Cattura**: Il gioco converte automaticamente tutte le celle "asciutte" in aree conquistate (`FILLED`) e svela l'immagine sottostante.
+1. Converte la scia in celle conquistate.
+2. Esegue una BFS dalla cella del centro del boss, attraversando le celle libere.
+3. Conquista le celle libere non raggiunte dalla BFS.
+4. Copia sulla `canvas` le porzioni dell'immagine e aggiorna percentuale e punteggio.
 
-### Perché è Infallibile
-Questo metodo (basato sulla Teoria dei Grafi e non sulla Geometria) garantisce matematicamente due cose:
-*   **Correttezza Topologica**: Non importa quanto sia strana la forma che disegni, se il Boss non può entrarci, è tua.
-*   **Anti-Softlock**: È impossibile murare il Boss per errore. Se il Boss è dentro un'area, quella non verrà mai riempita perché il Flood Fill parte proprio da lui.
+Il flood fill inverso è adatto alle forme concave, purché il boss sia in una cella libera valida e le collisioni mantengano questo vincolo. **Non garantisce da solo che il boss non attraversi muri**. Con più boss occorrerà definire le regole e, se devono restare tutti in gioco, conservare l'unione delle regioni raggiungibili da tutti i boss attivi.
 
----
+Il rendering riutilizza la `canvas`, evitando di ricostruire la maschera ogni frame. La cattura resta sincrona e può superare il budget di un frame: vedere le misure nel report.
 
-## 🧠 Analisi Tecnica (Note per Sviluppatori)
+## Verifiche
 
-### Architettura del Sistema
+```powershell
+python -m unittest discover -s tests -v
+```
 
-#### Griglia Logica e Rendering
-Il cuore del gioco si basa su una separazione netta tra la logica di gioco e la rappresentazione a schermo.
-- **Risoluzione Logica**: Il campo di gioco è suddiviso in una griglia discreta definita da `CELL_SIZE` (impostato a 2px). Questo riduce la complessità computazionale rispetto a una gestione pixel-perfect pura, mantenendo però una fluidità visiva elevata ("Alta Risoluzione" percepita).
-- **Stati della Cella**: Ogni cella della griglia può assumere due stati fondamentali: `EMPTY` (0) o `FILLED` (1).
+I 22 test verificano audio e transizioni, respawn, autointersezione, collisioni ordinarie, cattura e vittoria, progressione, caricamento dei 12 sfondi, alpha/proporzioni/centratura del boss, avvio da un'altra cartella, fallback multimediali e import senza finestre.
 
-### Soluzioni Algoritmiche
+Usano driver SDL `dummy`: controllano mixer e segnale del WAV, **non l'ascolto dagli altoparlanti**. Non certificano l'assenza dei problemi aperti né sostituiscono una partita completa con audio reale.
 
-#### 1. L'Algoritmo di Cattura Aree (Flood Fill Inverso)
-La sfida più complessa in un clone di Qix è determinare **quale** area riempire.
-**Soluzione**:
-1.  Quando il giocatore chiude un tracciato, eseguiamo un **Flood Fill (BFS)** partendo dal nemico.
-2.  Tutte le celle raggiunte dal nemico rimangono `EMPTY`.
-3.  Tutte le celle `EMPTY` che il nemico **non** può raggiungere sono, per esclusione, l'area catturata dal giocatore.
-4.  Queste celle vengono convertite in `FILLED` e l'immagine viene svelata.
+## Repository
 
-#### 2. Blitting Selettivo ("Reveal The Image")
-Per ottimizzare il rendering a 60 FPS:
--   All'avvio, viene creata una `canvas` nera.
--   Il metodo `_reveal_pixel` copia i pixel dall'immagine nascosta alla `canvas` solo quando un'area viene conquistata.
--   Nel loop di gioco, viene disegnata solo la `canvas` finale, evitando calcoli di maschera costosi ad ogni frame.
+Il `.gitignore` esclude cache Python, ambienti virtuali, build, log, file degli editor, configurazioni private e salvataggi. Gli asset runtime e i test devono essere versionati. Le esclusioni locali di `Documenti` e `start.bat` aggiunte durante la revisione sono state rispettate.
 
-### Valutazione Professionale e Miglioramenti Futuri
-Il codice attuale (`test2.py`) è un ottimo esempio di prototipazione rapida che è evoluta in un prodotto stabile.
-
-**Punti di Forza:**
-*   **Robustezza**: Gestione delle eccezioni sui file mancanti (Fallback System).
-*   **Performance**: Uso intelligente delle Surface di Pygame e algoritmi di riempimento ottimizzati.
-*   **Leggibilità**: Codice ben commentato e strutturato in una classe `Game` coesa.
-
-**Suggerimenti per il Refactoring (Next Steps):**
-1.  **Separazione delle Responsabilità**: Spostare la logica del `Player`, `Enemy` e `Grid` in classi separate per migliorare la manutenibilità.
-2.  **Configurazione Esterna**: Spostare le costanti (`WIDTH`, `COLORS`, `SPEED`) in un file `config.json` o `settings.py`.
-3.  **State Pattern**: Implementare una macchina a stati per gestire meglio le transizioni (Menu -> Gioco -> Win/GameOver), attualmente gestite con flag booleani.
+**Tutti i comandi e le operazioni Git sono riservati all'utente**, inclusi i
+controlli di sola lettura. Questa regola è conservata anche in `AGENTS.md`.
+L'assistente modifica codice e documentazione ed esegue le verifiche applicative.

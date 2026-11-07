@@ -13,6 +13,9 @@ ASSET_DIR = Path(__file__).resolve().parent / "public"
 MUSIC_VOLUME = 0.26
 DRAW_MUSIC_VOLUME = 0.10
 DRAW_VOLUME = 0.80
+BOSS_SPRITE_FILENAME = "boss2.png"
+BOSS_SPRITE_MAX_SIZE = (40, 40)
+BOSS_COLLISION_RADIUS = 15
 
 # Colori
 COLOR_BG_COVER = (0, 0, 0)       # Il colore che "copre" l'immagine (Nero)
@@ -62,22 +65,7 @@ class Game:
             self.cursor_img = None
             print("Cursore non trovato")
 
-        # Carica Boss
-        boss_path = ASSET_DIR / "icon" / "boss.png"
-        if boss_path.exists():
-            # Carica immagine
-            img = pygame.image.load(boss_path)
-            self.boss_size = 40
-            self.boss_img = pygame.transform.scale(img, (self.boss_size, self.boss_size))
-            
-            # Rimuovi sfondo (assumiamo che il pixel in alto a sinistra sia lo sfondo)
-            # Questo risolve il problema del "riquadro bianco" se l'immagine non ha trasparenza nativa
-            self.boss_img = self.boss_img.convert()
-            colorkey = self.boss_img.get_at((0, 0))
-            self.boss_img.set_colorkey(colorkey)
-        else:
-            self.boss_img = None
-            print("Boss image non trovata")
+        self.boss_img = self._load_boss_sprite()
 
         # Playlist Musicale
         self.music_tracks = ["01pink.mp3", "02gold.mp3", "03silver.mp3", "04black.mp3"]
@@ -90,6 +78,22 @@ class Game:
         self.lives = 3
         
         self.start_level()
+
+    def _load_boss_sprite(self):
+        """Carica lo sprite RGBA senza alterare proporzioni o geometria fisica."""
+        boss_path = ASSET_DIR / "icon" / BOSS_SPRITE_FILENAME
+        try:
+            image = pygame.image.load(str(boss_path)).convert_alpha()
+        except (pygame.error, OSError) as exc:
+            print(f"Sprite boss non disponibile ({boss_path}): {exc}")
+            return None
+
+        width, height = image.get_size()
+        max_width, max_height = BOSS_SPRITE_MAX_SIZE
+        scale = min(max_width / width, max_height / height)
+        size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        # Nearest-neighbor mantiene i contorni della pixel art e il canale alpha.
+        return pygame.transform.scale(image, size)
 
     def handle_death(self):
         self.lives -= 1
@@ -194,10 +198,8 @@ class Game:
         self.enemy_vx = 3.0 * speed_mult
         self.enemy_vy = 3.0 * speed_mult
         
-        if self.boss_img:
-            self.enemy_radius = 15 # Hitbox leggermente più piccola della sprite (40px)
-        else:
-            self.enemy_radius = 4
+        # La fisica resta identica anche se lo sprite non è disponibile.
+        self.enemy_radius = BOSS_COLLISION_RADIUS
         
         # Boss Behavior
         self.missiles = []
@@ -471,10 +473,12 @@ class Game:
 
         # 4. Disegna Nemico
         if self.boss_img:
-             # Draw centered
-             screen.blit(self.boss_img, (int(self.enemy_x - self.boss_img.get_width()//2), int(self.enemy_y - self.boss_img.get_height()//2)))
+            boss_rect = self.boss_img.get_rect(
+                center=(round(self.enemy_x), round(self.enemy_y)))
+            screen.blit(self.boss_img, boss_rect)
         else:
-             pygame.draw.circle(screen, COLOR_ENEMY, (int(self.enemy_x), int(self.enemy_y)), self.enemy_radius)
+            pygame.draw.circle(screen, COLOR_ENEMY,
+                               (round(self.enemy_x), round(self.enemy_y)), self.enemy_radius)
 
         # 5. Disegna Missili
         for m in self.missiles:
