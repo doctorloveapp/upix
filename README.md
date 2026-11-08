@@ -6,6 +6,10 @@ Il progetto contiene una campagna di **12 livelli con boss distinti**, cicli di
 difficoltà progressiva, Scossa anti-attesa, scudi e bonus di conquista.
 L'avvio passa sempre dal **menu principale**. Run Score, riepiloghi di livello,
 finale di campagna e classifica locale sono implementati.
+La schermata finale usa il logo Sons of Art e propone **Continua: New Game Plus**.
+La build Windows è in **dist/UPIX1989.exe**; istruzioni in
+[RELEASE_WINDOWS.md](RELEASE_WINDOWS.md). Per l'agente del sito:
+[webapp.md](webapp.md), piano tecnico del port browser e delle classifiche online.
 Per verifiche, problemi aperti e roadmap consultare
 [REPORT_SVILUPPO.md](REPORT_SVILUPPO.md), aggiornato l'8 novembre 2026.
 
@@ -187,6 +191,23 @@ La taratura completa richiede playtest sul dispositivo reale.
 
 ## Musica dinamica
 
+Musica e tema menu vengono uniformati rispetto al volume percepito di
+**02gold.mp3**, usando copie OGG con controllo dei picchi. Gli originali restano
+intatti. `audio.normalization` nel manifest regola preparazione, riferimento,
+limite di guadagno e cache. Nel sorgente i brani nuovi/cambiati vengono preparati
+prima dell'apertura del menu (FFmpeg nel PATH); la prima volta può richiedere
+alcuni minuti. Per anticipare il lavoro:
+
+```powershell
+.\.venv\Scripts\python.exe audio_normalization.py
+```
+
+La release EXE contiene già la cache e non richiede FFmpeg. Il player usa copie
+valide senza elaborazioni nel loop e ripiega sugli originali se necessario.
+La cache `public/audio_normalized/` è generata e non fa parte dei sorgenti:
+la pipeline desktop/web deve prepararla prima del packaging. Gli effetti di
+saldatrice ed esplosione conservano il proprio bilanciamento.
+
 Il **livello 1** riproduce sempre **public/music/02gold.mp3** in loop, anche nei
 cicli successivi. Il percorso è configurabile in `assets.first_level_music`.
 Dal livello 2 torna lo shuffle; il tema già ascoltato viene conteggiato nel giro,
@@ -346,15 +367,17 @@ la copertura SVG retinata:
 
 ```json
 "level_cover": {
-  "transparency": 0.35,
-  "halftone_spacing_px": 4,
-  "halftone_strength": 0.55
+  "transparency": 0.03,
+  "halftone_strength": 0.55,
+  "halftone_spacing_px": 4
 }
 ```
 
 `transparency`: **0** nasconde la primaria, **1** la mostra completamente.
-Aumentare il valore lascia intravedere di più il quadro. `halftone_spacing_px`
-regola il passo dei punti; `halftone_strength` l'intensità (0 disattiva il retino).
+Aumentare il valore lascia intravedere di più il quadro.
+Subito sotto, **`halftone_strength`** regola quanto è evidente la retinatura:
+**0** la disattiva, **0.25** la rende leggera, **0.55** intermedia, **1** più marcata.
+`halftone_spacing_px` regola invece la distanza fra i punti.
 Riavviare il gioco dopo le modifiche. L'effetto è preparato al caricamento e
 riguarda la grafica: griglia, percentuale e collisioni restano indipendenti.
 Le aree conquistate mostrano sempre la primaria pulita.
@@ -431,7 +454,8 @@ naturalmente dopo la fine dell'animazione; la musica riprende al respawn/finale.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-I **268 test** coprono geometria/solver, missili continui, stati/pausa, timer,
+I **279 test** coprono normalizzazione/cache, finale New Game Plus, persistenza
+della release, geometria/solver, missili continui, stati/pausa, timer,
 cattura, audio, respawn, vittoria,
 progressione, le 12 coppie copertura/immagine primaria senza label, cache, rendering
 del boss e fallback. Una regressione con SVG e PNG di colori distinti verifica

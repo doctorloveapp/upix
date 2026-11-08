@@ -28,10 +28,12 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 - **Copertura SVG visibile all'avvio**, **immagine primaria PNG/JPG svelata
   dalla conquista**: ruoli separati per tutte le dodici coppie di asset.
   Entrambe usano scala uniforme e ritaglio centrato, senza deformare le immagini.
-  La copertura è ora **retinata e trasparente al 35%**: la primaria si intravede
+  La copertura è **retinata**, con trasparenza corrente **2%**, intensità **0,15**
+  e passo **5 px**, regolati dall'utente: la primaria si intravede
   prima della conquista e diventa pulita nelle celle conquistate.
 - **Spari diretti al player in tutti i livelli**, più lenti e meno frequenti
-  all'inizio: da **2 px/tick ogni 2400 ms** a **5,3 px/tick ogni 750 ms**.
+  all'inizio: da **2 px/tick ogni 2400 ms** a **5,2 px/tick ogni 800 ms**
+  secondo l'ultima taratura dell'utente.
   Boss da 1,6 a 6 px/tick; conquista dal 70% all'86%. La curva sostituisce
   i precedenti 1900/1800/1700 ms e la velocità missile uniforme di 5 px/tick.
 - **Player proporzionato nel box 30×30**, centrato sulla cella logica; AABB
@@ -61,7 +63,12 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   dal livello 2 riprende lo shuffle, senza ripetere subito il brano appena suonato.
 - Tema dei menu **public/sounds/UPix.mp3** in loop, volume **0,26**, fade-in
   **800 ms** e fade-out **500 ms** prima dell'avvio della campagna.
-- **268 test superati**, compresi musica del livello 1, copertura retinata/trasparente, tema dei menu/fade, animazione di morte, contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
+- Finale con **New Game Plus**, logo SONS e label prive del conteggio ambiguo.
+  Normalizzazione musicale rispetto a **02gold.mp3**, cache OGG verificata per 10 brani.
+  **Release EXE Windows x64 generata e verificata**; port web documentato in `webapp.md`.
+- **279 test superati**, compresi normalizzazione/cache, finale e persistenza EXE,
+  musica del livello 1, copertura retinata/trasparente, tema dei menu/fade,
+  animazione di morte, contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
   input/controller, i18n, frontiera, scudi,
   vite extra, salvataggio oltre 12 livelli, scossa, contorni frammentati, sprite orientati,
   menu, campagna completa, classifica JSON/browser,
@@ -74,7 +81,152 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 - Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**,
   `resvg_py` **0.5.0**. Dipendenze dichiarate in `requirements.txt`.
 
-## Consegna corrente — Tema livello 1 e coperture retinate (8 novembre 2026)
+## Consegna corrente — Finale, audio, EXE e consegna web (8 novembre 2026)
+
+### Finale e significato del conteggio
+
+La precedente label contava `RunScore.completed_count`: vincendo soltanto il
+quadro 12 da avvio debug il risultato era correttamente **1**, ma la presentazione
+lo faceva confondere con il numero del livello o con una campagna completa.
+La schermata conclusiva ora mostra **NEW GAME PLUS SBLOCCATO** e l'opzione
+richiesta **Continua: New Game Plus**, con equivalenti inglesi nei cataloghi.
+Al Game Over il dato numerico rimane disponibile come **QUADRI CONQUISTATI NELLA
+PARTITA**, riferito ai risultati effettivamente registrati. Score, dati classifica
+e progressione dei cicli non sono stati alterati.
+
+Sfondo **public/assets/LOGO SONS.png**, proporzionato senza ritagli, centrato e
+precaricato da `ScreenRenderer`; oscuramento configurabile con
+`ui.campaign_end_background_dim = 0.55` per la leggibilità. Usato sia nella
+scelta del New Game Plus sia nell'inserimento nome dopo la conclusione della
+campagna; non sostituisce il normale sfondo del Game Over. Asset mancante:
+fallback uniforme. Nessuna lettura o riscalatura dell'immagine nel frame loop.
+Controllata visivamente la presentazione **IT/EN a 1024×768**.
+
+### Normalizzazione musicale effettivamente implementata
+
+Nuovo `audio_normalization.py`: misura loudness integrata EBU R128 con FFmpeg,
+usa **02gold.mp3 come riferimento**, genera copie OGG e verifica di nuovo il
+segnale decodificato dopo la codifica. Gli MP3 originali non sono modificati.
+Il riferimento originale misura **−9,76 LUFS**; le copie vengono accettate con
+scostamento massimo **0,5 LU** dal target e picchi decodificati **≤−0,1 dBTP**.
+Il filtro usa un obiettivo iniziale di **−2 dBTP**, con limiter e correzione del
+guadagno quando la codifica o il controllo dei picchi cambiano il volume finale.
+Anche il riferimento ha una copia con picchi controllati, mantenendo il suo
+volume percepito entro la tolleranza. L'ascolto reale non è certificato dal test dummy.
+
+| Brano | Originale LUFS | Copia LUFS | Variazione dB |
+| --- | ---: | ---: | ---: |
+| 01pink.mp3 | −9,47 | −10,13 | −0,66 |
+| 02gold.mp3 | −9,76 | −10,06 | −0,30 |
+| 03silver.mp3 | −9,19 | −10,10 | −0,91 |
+| 04black.mp3 | −9,27 | −10,06 | −0,79 |
+| Lukso blockchain.mp3 | −15,63 | −9,86 | +5,77 |
+| Pad new.mp3 | −13,26 | −10,03 | +3,23 |
+| Pad new2.mp3 | −15,37 | −10,25 | +5,12 |
+| Pad new3.mp3 | −13,19 | −10,01 | +3,18 |
+| Universal everything.mp3 | −15,47 | −10,21 | +5,26 |
+| UPix.mp3 | −14,19 | −10,06 | +4,13 |
+
+I dieci output misurati hanno un intervallo di **0,39 LU** e picchi massimi
+di **−0,27 dBTP**. La normalizzazione riguarda musica e tema menu, non modifica
+i livelli già bilanciati di saldatrice/esplosione. Volume mixer, ducking,
+fade menu, tema fisso e shuffle restano gestiti come prima.
+
+Parametri in `audio.normalization`: abilitazione, preparazione all'avvio,
+reference, cache_dir, true_peak_db, loudness_range_lu, max_boost_db (18),
+vorbis_quality (6), timeout_seconds (300). La cache è **public/audio_normalized**,
+con indice atomico, hash di sorgenti/output/riferimento/configurazione e
+invalidazione dei soli file modificati. Non entra nel controllo versione:
+si rigenera dai sorgenti ed è inclusa nella release.
+
+Nel sorgente la preparazione avviene **prima di aprire il menu**, soltanto per
+file nuovi o cambiati; richiede FFmpeg e la prima volta può durare alcuni minuti.
+È possibile anticiparla con `python audio_normalization.py`. Durante partita,
+menu e cambi brano non vengono lanciati encoder o misuratori: il player risolve
+la copia pronta e la riproduce in streaming. Senza FFmpeg, cache valida usata
+normalmente; cache assente/non valida, riproduzione dell'originale con fallback.
+Segnali silenziosi o non normalizzabili rispettando il limite di guadagno vengono
+scartati dalla preparazione, senza corrompere indice o file originali.
+
+### Release Windows consegnata
+
+- **dist/UPIX1989.exe**, singolo eseguibile Windows x64 da **219.882.243 byte**,
+  con Python 3.13.5, Pygame, resvg, cataloghi, font, asset e cache audio inclusi.
+- **dist/UPIX1989-Windows-x64.zip**: EXE, manifest esterno opzionale,
+  LEGGIMI.txt e build_info.json. Le copie cache obsolete non sono impacchettate.
+- `desktop_launcher.py`, `tools/build_release.py` e `requirements-build.txt`
+  permettono di ricostruire il pacchetto con PyInstaller **6.17.0**.
+- SHA-256 EXE:
+  `47833c150923e4aa4a6a28239b73befb14f3b3ca43d3e5ad4307a64cdc17fc5a`.
+
+L'EXE funziona da solo. Se `game_manifest.json` si trova nella stessa cartella,
+viene usato per le regolazioni; altrimenti viene letta la copia incorporata.
+I record della release sono salvati in **%LOCALAPPDATA%/UPIX1989/highscores.json**,
+non nella cartella temporanea di estrazione, con lo stesso salvataggio atomico.
+Il log GUI viene scritto nella stessa directory utente. Configurazione di
+normalizzazione cambiata: rigenerare cache/build per mantenere le copie coerenti.
+
+La build è per **Windows 10/11 a 64 bit**, generata e provata su Windows 11.
+Non è un eseguibile universale per macOS/Linux/32 bit e non è certificato ogni
+PC/driver. Non è stata aggiunta una firma digitale di distribuzione.
+
+### Verifiche della release e fine tuning conservato
+
+**279 test superati in 78,939 s**. Undici nuovi test coprono finale/lingue,
+fallback dello sfondo, cache/guadagno/picchi, invalidazione e corruzione,
+validazione e salvataggio della release fuori dal bundle. I test del loop
+isolano la preparazione audio: nessun FFmpeg reale viene eseguito dai test unitari.
+
+Sono stati rilevati due vincoli storici nel test di progressione, fissati a
+5,3 px/tick e 750 ms: l'utente ha tarato il livello 12 a **5,2 px/tick / 800 ms**.
+Conservata integralmente la taratura; rimossi soltanto quei valori finali fissi
+dal test, mantenendo le verifiche di progressione monotona per tutti i livelli.
+Conservati anche trasparenza **0,02**, retino **0,15 / 5 px** e gli altri parametri.
+
+Due smoke test del **vero EXE**, con driver SDL dummy, working directory estranea
+al progetto e PATH ridotto al solo System32 (senza Python/FFmpeg):
+
+1. EXE con manifest esterno: ingresso menu, asset e SVG livello 12, esplosione,
+   contatore vite, finale IT/EN, cache audio e scrittura/rilettura classifica.
+2. Copia del solo EXE in cartella isolata senza manifest esterno: stesso scenario
+   riuscito usando risorse/configurazione incorporate e dati utente persistenti.
+
+Entrambi: **exit code 0, ok=true, frozen=true, CAMPAIGN_COMPLETE**. Diagnostiche
+in `build/release-smoke.json` e `build/standalone-smoke.json`; screenshot prodotto
+dalla release. Non equivalgono a un playtest hardware su tutte le macchine.
+
+### Passaggio all'agente web
+
+Creato **webapp.md**, documento operativo basato sui moduli presenti e sulle
+fonti primarie: port Pygbag/WASM con loop async, conversione SVG, pipeline audio,
+catalogo browser, input/focus/autoplay, adattatore BrowserScoreStore,
+hosting/routing Vercel, API/database e verifica autorevole dei punteggi.
+Include fasi e criteri di accettazione, distingue ciò che esiste dalle proposte
+e chiarisce che l'EXE non è eseguibile nel browser. Restano da implementare
+build web, bridge reali, recorder/replay e backend competitivo nel repository
+del sito. Nessun sito è stato modificato o pubblicato. Nessuna operazione Git eseguita.
+
+## Consegna precedente — Controllo dell'intensità della retinatura (8 novembre 2026)
+
+Il controllo richiesto era già implementato come `level_cover.halftone_strength`.
+È stato posizionato **immediatamente sotto `transparency`**, nelle prime righe
+di `game_manifest.json`, mantenendo un solo parametro autorevole per l'intensità.
+Il valore resta **0,55**. Conservata la trasparenza **0,03** impostata dall'utente.
+
+Regolazione: **0** disattiva i punti, **0,25** dà un effetto leggero,
+**0,55** intermedio, **1** marcato. `halftone_spacing_px = 4` regola invece il
+passo del retino. Nel JSON usare il punto decimale e riavviare il gioco dopo
+le modifiche. L'evidenza finale dipende anche dalla trasparenza della copertura.
+
+Aggiornato il README con esempi e disposizione dei parametri. Rendering,
+validazione dell'intervallo 0–1, musica e fisica restano quelli già implementati;
+non sono stati aggiunti alias o nuove elaborazioni nel frame loop.
+Verifica mirata: **21 test superati** (14 asset/composizione e 7 manifest).
+La suite completa precedentemente superata resta di **268 test** e non è stata
+rieseguita per questo riordino dei parametri e aggiornamento della documentazione.
+Nessuna operazione Git eseguita.
+
+## Consegna precedente — Tema livello 1 e coperture retinate (8 novembre 2026)
 
 ### Musica del livello 1
 
@@ -1947,7 +2099,7 @@ Prima della migrazione:
 
 ## Verifiche e limiti residui
 
-Suite corrente: **268 test superati** con:
+Suite corrente: **279 test superati** con:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -2007,6 +2159,7 @@ Progressione delle consegne:
 | Localizzazione / morte | Scossa/Shock uniforme, stato DYING, sette fotogrammi/audio e mondo congelato, respawn/finale differiti e regressioni a FPS diversi; 248 test |
 | Tema menu | UPix.mp3 in streaming, fade-in/out non bloccanti, continuità fra schermate e passaggio alla playlist dopo la dissolvenza; 258 test |
 | Tema livello 1 / retino | 02gold.mp3 fisso al livello 1, shuffle dal 2 senza ripetizione immediata, SVG retinati e trasparenza regolabile nelle prime righe del manifest; 268 test |
+| Finale / audio / release | New Game Plus e logo SONS, 10 musiche normalizzate, EXE autonomo Windows x64 e handoff webapp.md; 279 test e due smoke test del binario |
 
 Il gioco comprende una prima vertical slice di 3 livelli su una campagna
 giocabile di 12, con 5 vite iniziali, vita extra al 74%, scudi per tagli ≥25%,

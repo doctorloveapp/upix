@@ -26,7 +26,8 @@
   "shock_active": "SCOSSA SUL BORDO! Conquista per disinnescare",
   "shock_warning": "SCOSSA {seconds}s: lascia il bordo e conquista!",
   "run_score": "RUN SCORE  {score:09d}",
-  "completed_levels": "LIVELLI COMPLETATI  {levels}",
+  "completed_levels": "QUADRI CONQUISTATI NELLA PARTITA: {levels}",
+  "campaign_finish_status": "NEW GAME PLUS SBLOCCATO",
   "summary_capture": "CATTURA  {percent:.1f}%   VITE  {lives}",
   "summary_base": "PUNTI BASE  {base}",
   "summary_bonus": "BONUS  {bonus}",
@@ -61,7 +62,7 @@
     "Dopo il 12: salva o continua un ciclo più difficile."
   ],
   "cycle_options": [
-    "Continua: ciclo {cycle}",
+    "Continua: New Game Plus",
     "Registra il punteggio e termina"
   ],
   "shield_notice_continue": "Invio / A: riepilogo livello",

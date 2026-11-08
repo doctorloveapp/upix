@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import sys
 import unicodedata
 from uuid import UUID
 
@@ -107,7 +108,13 @@ class ScoreStore:
 
 class JsonScoreStore(ScoreStore):
     def __init__(self, path=None):
-        self.path = Path(path) if path is not None else ROOT / MANIFEST['leaderboard']['file']
+        if path is not None:
+            self.path = Path(path)
+        elif getattr(sys, 'frozen', False):
+            base = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local'))
+            self.path = base / 'UPIX1989' / Path(MANIFEST['leaderboard']['file']).name
+        else:
+            self.path = ROOT / MANIFEST['leaderboard']['file']
 
     def _read(self):
         try:

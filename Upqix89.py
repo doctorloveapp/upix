@@ -922,6 +922,8 @@ class Game:
                        self.level_score.bonus(self.game_clock.elapsed_ms), self.shields.charges, self.cycle)
 
 def main():
+    from audio_normalization import prepare_configured_audio
+    prepare_configured_audio()
     from application import CampaignApp
     audio = MANIFEST['audio']
     pygame.mixer.pre_init(audio['sample_rate'], audio['sample_bits'], audio['channels'], audio['buffer_size'])

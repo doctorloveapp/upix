@@ -1,5 +1,10 @@
 # UPIX 1989 sul sito Sons of Art
 
+Aggiornamento dell'8 novembre 2026: la consegna operativa aggiornata per l'agente
+del sito è **[webapp.md](../webapp.md)**. Comprende anche pipeline audio
+normalizzato, finale New Game Plus, differenze della build Windows e limiti del
+contratto replay attuale. Le API descritte qui restano proposte, non pubblicate.
+
 Verifica del 7 novembre 2026 su <https://sonsofart.vercel.app/>: risposta HTTP 200,
 header `Server: Vercel`, bundle `/assets/index-dS5fXNpK.js` con React/createRoot
 e marcatori Vite. La pagina presenta il collettivo e la sezione giochi/LUKSO.

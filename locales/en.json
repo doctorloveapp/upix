@@ -27,7 +27,8 @@
   "shock_active": "PERIMETER SHOCK! Capture to disarm",
   "shock_warning": "SHOCK {seconds}s: leave the edge and capture!",
   "run_score": "RUN SCORE  {score:09d}",
-  "completed_levels": "LEVELS COMPLETED  {levels}",
+  "completed_levels": "STAGES CAPTURED IN THIS RUN: {levels}",
+  "campaign_finish_status": "NEW GAME PLUS UNLOCKED",
   "summary_capture": "CAPTURED  {percent:.1f}%   LIVES  {lives}",
   "summary_base": "BASE POINTS  {base}",
   "summary_bonus": "BONUS  {bonus}",
@@ -61,7 +62,7 @@
     "After level 12: save or continue a harder cycle."
   ],
   "cycle_options": [
-    "Continue: cycle {cycle}",
+    "Continue: New Game Plus",
     "Record score and finish"
   ],
   "shield_notice_continue": "Enter / A: level summary",

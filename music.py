@@ -6,6 +6,7 @@ import random
 from time import monotonic_ns
 
 import pygame
+from audio_normalization import normalized_music_path
 
 
 class MenuMusic:
@@ -36,7 +37,7 @@ class MenuMusic:
         if not pygame.mixer.get_init():
             return
         try:
-            pygame.mixer.music.load(str(self.path))
+            pygame.mixer.music.load(str(normalized_music_path(self.path)))
             pygame.mixer.music.set_volume(0)
             pygame.mixer.music.play(loops=-1)
             self.active = True
@@ -159,7 +160,7 @@ class MusicPlayer:
         if not pygame.mixer.get_init():
             return False
         try:
-            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.load(str(normalized_music_path(path)))
             pygame.mixer.music.set_volume(self.volume)
             if loops:
                 pygame.mixer.music.play(loops=loops)

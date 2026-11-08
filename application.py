@@ -11,6 +11,7 @@ from input_manager import InputManager
 from localization import I18N, tr
 from debug_menu import CheatSequence, StartSettings
 from music import MenuMusic, MusicPlayer
+from assets import load_sprite
 
 TEXT = I18N
 
@@ -21,6 +22,15 @@ class ScreenRenderer:
         font = MANIFEST['assets']['font']
         self.font = pygame.font.SysFont(font, MANIFEST['ui']['font_size'], bold=True)
         self.title_font = pygame.font.SysFont(font, MANIFEST['ui']['title_font_size'], bold=True)
+        image, _ = load_sprite(ROOT / MANIFEST['assets']['root'] /
+                               MANIFEST['assets']['campaign_end_background'], surface.get_size())
+        self.campaign_background = pygame.Surface(surface.get_size()).convert()
+        self.campaign_background.fill(MANIFEST['colors']['menu_background'])
+        if image is not None:
+            self.campaign_background.blit(image, image.get_rect(center=surface.get_rect().center))
+            shade = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+            shade.fill((0, 0, 0, round(255 * MANIFEST['ui']['campaign_end_background_dim'])))
+            self.campaign_background.blit(shade, (0, 0))
 
     def _line(self, label, y, color, title=False):
         text = (self.title_font if title else self.font).render(label, True, color)
@@ -30,9 +40,12 @@ class ScreenRenderer:
             text = pygame.transform.smoothscale(text, (round(maximum), round(text.get_height() * scale)))
         self.surface.blit(text, text.get_rect(midtop=(self.surface.get_width() // 2, y)))
 
-    def draw(self, title, lines=(), *, selected=None, footer='', background=False, panel=False):
+    def draw(self, title, lines=(), *, selected=None, footer='', background=False, panel=False,
+             backdrop=None):
         colors = MANIFEST['colors']
-        if background:
+        if backdrop is not None:
+            self.surface.blit(backdrop, (0, 0))
+        elif background:
             shade = pygame.Surface(self.surface.get_size(), pygame.SRCALPHA)
             shade.fill((*colors['menu_background'], 225))
             self.surface.blit(shade, (0, 0))
@@ -325,15 +338,18 @@ class CampaignApp:
                                footer=self.message or TEXT['back'])
         elif state in (GameState.NAME_ENTRY, GameState.CAMPAIGN_COMPLETE):
             title = TEXT['complete_title'] if self.game.state == GameState.CAMPAIGN_COMPLETE else TEXT['game_over_title']
+            campaign_end = self.game.state == GameState.CAMPAIGN_COMPLETE
             lines = [TEXT['run_score'].format(score=self.game.run_score),
+                     TEXT['campaign_finish_status'] if campaign_end else
                      TEXT['completed_levels'].format(levels=self.game.run.completed_count)]
             if state == GameState.NAME_ENTRY:
                 lines += [TEXT['enter_name'], self.name + '_']
             else:
-                lines += [line.format(cycle=self.game.cycle + 1) for line in TEXT['cycle_options']]
+                lines += list(TEXT['cycle_options'])
             self.renderer.draw(title, lines,
                 selected=(2 + self.cycle_selected) if state == GameState.CAMPAIGN_COMPLETE else None,
-                footer=self.message or (TEXT['name_help'] if state == GameState.NAME_ENTRY else TEXT['continue']))
+                footer=self.message or (TEXT['name_help'] if state == GameState.NAME_ENTRY else TEXT['continue']),
+                backdrop=self.renderer.campaign_background if campaign_end else None)
         else:
             self.game.draw()
             if state == GameState.LEVEL_CLEAR:

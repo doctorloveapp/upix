@@ -3,11 +3,16 @@
 from hashlib import sha256
 import json
 import math
+import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 
 ROOT = Path(__file__).resolve().parent
 MANIFEST_PATH = ROOT / 'game_manifest.json'
+if getattr(sys, 'frozen', False):
+    external_manifest = Path(sys.executable).with_name('game_manifest.json')
+    if external_manifest.is_file():
+        MANIFEST_PATH = external_manifest
 
 
 def _relative(value):
@@ -66,7 +71,7 @@ def load_manifest(path=MANIFEST_PATH):
             raise ValueError('Stati delle celle indistinguibili')
         for key in ('root', 'player_sprite', 'frame', 'energy_sprite', 'shield_sprite',
                     'life_sprite', 'music_dir', 'boss_dir', 'death_sound', 'menu_music',
-                    'first_level_music'):
+                    'first_level_music', 'campaign_end_background'):
             _relative(data['assets'][key])
         frames = data['assets']['death_frames']
         if not isinstance(frames, list) or not frames or len(set(frames)) != len(frames):
@@ -140,6 +145,21 @@ def load_manifest(path=MANIFEST_PATH):
                 value not in ('.png', '.jpg', '.jpeg') for value in data['assets']['primary_suffixes']):
             raise ValueError('Formati primari non supportati')
         audio = data['audio']
+        normalization = audio['normalization']
+        for key in ('enabled', 'prepare_on_startup'):
+            if type(normalization[key]) is not bool:
+                raise ValueError(f'normalization.{key}: richiesto booleano')
+        for key in ('reference', 'cache_dir'):
+            _relative(normalization[key])
+        for key, lower, upper in (('true_peak_db', -9, -1), ('loudness_range_lu', 1, 50),
+                                  ('max_boost_db', 0, 30), ('vorbis_quality', 0, 10)):
+            value = normalization[key]
+            if type(value) not in (int, float) or not math.isfinite(value) or not lower <= value <= upper:
+                raise ValueError(f'normalization.{key}: valore non valido')
+        _positive(normalization['timeout_seconds'], 'timeout_seconds')
+        dim = data['ui']['campaign_end_background_dim']
+        if type(dim) not in (int, float) or not math.isfinite(dim) or not 0 <= dim <= 1:
+            raise ValueError('Oscuramento sfondo finale non valido')
         for key in ('menu_fade_in_ms', 'menu_fade_out_ms'):
             if type(audio[key]) is not int or audio[key] < 0:
                 raise ValueError(f'{key}: richiesti millisecondi interi non negativi')

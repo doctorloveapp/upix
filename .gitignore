@@ -52,6 +52,7 @@ dist/
 /saves/
 /user_data/
 /highscores.json
+/public/audio_normalized/
 
 # Metadati del sistema operativo
 .DS_Store
@@ -63,3 +64,4 @@ $RECYCLE.BIN/
 
 Documenti
 start.bat
+webapp.md

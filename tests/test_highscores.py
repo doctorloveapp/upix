@@ -17,6 +17,16 @@ def entry(name='Lukso', score=1000):
 
 
 class StorageTests(unittest.TestCase):
+    def test_frozen_release_saves_outside_temporary_bundle(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch('highscores.sys.frozen', True, create=True), \
+                mock.patch.dict('os.environ', {'LOCALAPPDATA': folder}):
+            store = JsonScoreStore()
+            self.assertEqual(store.path, Path(folder) / 'UPIX1989/highscores.json')
+            saved = entry()
+            store.submit(saved)
+            self.assertEqual(JsonScoreStore().load(), [saved])
+
     def test_file_is_versioned_utf8_and_reloaded_from_another_store(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'user_data' / 'highscores.json'

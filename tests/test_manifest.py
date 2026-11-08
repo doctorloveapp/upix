@@ -10,6 +10,18 @@ from manifest import MANIFEST, MANIFEST_PATH, load_manifest
 
 
 class ManifestTests(unittest.TestCase):
+    def test_normalization_and_final_background_configuration_is_validated(self):
+        for key, value in (('enabled', 1), ('true_peak_db', 0), ('max_boost_db', -1),
+                           ('reference', '../ref.mp3'), ('cache_dir', '../outside'),
+                           ('vorbis_quality', float('nan')), ('timeout_seconds', 0)):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as folder:
+                data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
+                data['audio']['normalization'][key] = value
+                path = Path(folder) / 'invalid.json'
+                path.write_text(json.dumps(data), encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    load_manifest(path)
+
     def test_cover_controls_and_first_level_music_are_validated(self):
         for section, key, value in (
                 ('level_cover', 'transparency', -0.1),

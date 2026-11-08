@@ -52,6 +52,45 @@ class RunScoreTests(unittest.TestCase):
 
 
 class CampaignAppTests(unittest.TestCase):
+    def test_debug_level_twelve_finale_uses_new_game_plus_and_sons_background(self):
+        self.app.debug_settings = StartSettings(level=12)
+        self.app._start_campaign(self.app.debug_settings)
+        game = self.app.game
+        game.percent = 90
+        game._set_state(GameState.LEVEL_CLEAR)
+        game.next_level()
+        self.app.advance(InputFrame())
+        self.assertEqual(game.run.completed_count, 1)  # Il debug ha giocato un solo quadro.
+        self.assertEqual(self.app.state, GameState.CAMPAIGN_COMPLETE)
+        original = I18N.language
+        try:
+            for language in ('it', 'en'):
+                I18N.set_language(language)
+                with mock.patch.object(self.app.renderer, 'draw') as draw:
+                    self.app.draw()
+                    lines = draw.call_args.args[1]
+                    self.assertEqual(lines[1], I18N['campaign_finish_status'])
+                    self.assertIn('New Game Plus', lines[2])
+                    self.assertNotIn('cycle', lines[2].lower())
+                    self.assertIs(draw.call_args.kwargs['backdrop'], self.app.renderer.campaign_background)
+            self.press(pygame.K_DOWN)
+            self.press(pygame.K_RETURN)
+            self.assertEqual(self.app.state, GameState.NAME_ENTRY)
+            with mock.patch.object(self.app.renderer, 'draw') as draw:
+                self.app.draw()
+                self.assertIsNotNone(draw.call_args.kwargs['backdrop'])
+        finally:
+            I18N.set_language(original)
+
+    def test_final_background_is_cached_and_missing_image_has_plain_fallback(self):
+        from application import ScreenRenderer
+        with mock.patch('application.load_sprite', return_value=(None, (1, 1))):
+            renderer = ScreenRenderer(self.surface)
+        with mock.patch('pygame.image.load', side_effect=AssertionError('I/O nel rendering')):
+            renderer.draw('', backdrop=renderer.campaign_background)
+            renderer.draw('', backdrop=renderer.campaign_background)
+        self.assertEqual(self.surface.get_at((0, 0))[:3], tuple(MANIFEST['colors']['menu_background']))
+
     @classmethod
     def setUpClass(cls):
         pygame.init()

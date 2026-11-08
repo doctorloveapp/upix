@@ -1073,6 +1073,7 @@ class MainLoopTests(unittest.TestCase):
                              game.boss_img.get_size())
 
         with mock.patch.object(upix, 'Game', side_effect=build_game), \
+                mock.patch('audio_normalization.prepare_configured_audio'), \
                 mock.patch('application.MenuMusic') as menu_type, \
                 mock.patch('pygame.event.get', side_effect=events), \
                 mock.patch('pygame.time.Clock') as render_clock, \
