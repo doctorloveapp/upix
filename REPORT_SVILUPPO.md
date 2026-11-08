@@ -28,6 +28,8 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 - **Copertura SVG visibile all'avvio**, **immagine primaria PNG/JPG svelata
   dalla conquista**: ruoli separati per tutte le dodici coppie di asset.
   Entrambe usano scala uniforme e ritaglio centrato, senza deformare le immagini.
+  La copertura è ora **retinata e trasparente al 35%**: la primaria si intravede
+  prima della conquista e diventa pulita nelle celle conquistate.
 - **Spari diretti al player in tutti i livelli**, più lenti e meno frequenti
   all'inizio: da **2 px/tick ogni 2400 ms** a **5,3 px/tick ogni 750 ms**.
   Boss da 1,6 a 6 px/tick; conquista dal 70% all'86%. La curva sostituisce
@@ -55,7 +57,11 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   Il rilascio della direzione resta richiesto dopo il respawn.
 - Musica scoperta da `public/music` all'avvio, shuffle senza ripetizioni nel
   giro e alla giunzione fra giri, con RNG separato dalla simulazione.
-- **248 test superati**, compresi animazione di morte, contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
+  Eccezione: **02gold.mp3 in loop per tutto il livello 1**, anche nei nuovi cicli;
+  dal livello 2 riprende lo shuffle, senza ripetere subito il brano appena suonato.
+- Tema dei menu **public/sounds/UPix.mp3** in loop, volume **0,26**, fade-in
+  **800 ms** e fade-out **500 ms** prima dell'avvio della campagna.
+- **268 test superati**, compresi musica del livello 1, copertura retinata/trasparente, tema dei menu/fade, animazione di morte, contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
   input/controller, i18n, frontiera, scudi,
   vite extra, salvataggio oltre 12 livelli, scossa, contorni frammentati, sprite orientati,
   menu, campagna completa, classifica JSON/browser,
@@ -68,7 +74,144 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 - Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**,
   `resvg_py` **0.5.0**. Dipendenze dichiarate in `requirements.txt`.
 
-## Consegna corrente — Scossa/Shock e DeathSequence (8 novembre 2026)
+## Consegna corrente — Tema livello 1 e coperture retinate (8 novembre 2026)
+
+### Musica del livello 1
+
+`assets.first_level_music = music/02gold.mp3` indica il tema obbligatorio.
+`MusicPlayer.play_level()` seleziona il comportamento prima dell'avvio del quadro:
+al livello 1 riproduce quel brano in loop; morte, pausa e reinizializzazione dello
+stesso quadro non lo fanno ricominciare. Al passaggio al livello 2 il loop viene
+sostituito dalla playlist casuale. Dal livello 2 in avanti rimane il comportamento
+precedente: fine naturale del brano e nessun riavvio a ogni cambio livello.
+Un avvio debug dai livelli 2–12 usa direttamente lo shuffle; tornando al livello 1
+nel ciclo successivo viene ripristinato il tema fisso.
+
+`MusicShuffle.mark_played()` contabilizza il tema obbligatorio nel giro corrente:
+lo elimina dai brani ancora da suonare e aggiorna l'ultimo brano, conservando
+l'ordine degli altri. Così **02gold non riparte immediatamente al livello 2**;
+torna eleggibile quando si esaurisce il giro. La normale ripetizione inevitabile
+con un catalogo di un solo file rimane gestita. File fisso assente/corrotto:
+diagnostica e fallback alla playlist, senza impedire il gioco. Il tema dei menu,
+il suo fade-out e il RNG fisico restano separati da questa eccezione.
+
+### Copertura SVG retinata e regolazione autonoma
+
+Nuova sezione **level_cover**, collocata subito dopo il titolo, nelle prime
+righe di **game_manifest.json**:
+
+```json
+"level_cover": {
+  "transparency": 0.35,
+  "halftone_spacing_px": 4,
+  "halftone_strength": 0.55
+}
+```
+
+- **transparency:** da **0** (SVG opaco) a **1** (primaria completamente visibile).
+  **0,35** lascia intravedere l'immagine sotto la copertura. Per nasconderla di
+  più ridurre il valore, per mostrarla di più aumentarlo. Nel JSON usare il punto
+  decimale. Riavviare il gioco per applicare le modifiche: non è introdotto un
+  ricaricamento del manifest durante una partita.
+- **halftone_spacing_px:** passo del retino in pixel logici; valore iniziale **4**.
+- **halftone_strength:** intensità dei punti scuri fra **0 e 1**, iniziale **0,55**;
+  **0** disattiva il retino mantenendo il blend trasparente.
+
+`compose_level_cover()` prepara il canvas al caricamento del quadro: usa SVG e
+primaria già scalati e ritagliati uniformemente, aggiunge il retino per tasselli
+e compone i due livelli secondo la trasparenza. Non altera le superfici sorgenti
+e non esegue elaborazioni grafiche aggiuntive nel tick o nel rendering. Gli SVG
+originali restano vettoriali e non vengono riscritti. La conquista copia come
+prima la primaria originale, togliendo in quelle celle copertura e retino;
+la vittoria mostra l'immagine pulita a tutto campo.
+
+La trasparenza è soltanto visiva: **non cambia griglia, collisioni, percentuale,
+punteggi o BFS**. Anche con trasparenza 1 il territorio deve essere conquistato.
+Il livello 1 parte ancora con il **2,32%** del bordo iniziale. Copertura mancante
+o corrotta conserva il fallback neutro opaco, senza svelare per errore la primaria.
+
+### Verifiche
+
+Suite completa: **268 test superati in 84,606 s** con
+`.venv\Scripts\python.exe -m unittest discover -s tests -q`.
+Aggiunti dieci test: tema fisso/loop, passaggio
+allo shuffle e cicli, contabilizzazione del brano senza ripetizioni, fallback e
+avvio debug, trasparenza agli estremi e intermedia, retino periodico su dimensioni
+dispari, superfici sorgenti immutate, dimensioni incompatibili e validazione del
+manifest. Aggiornata la regressione sulla conquista: la primaria si intravede
+all'avvio, rimane invariata fuori dalla conquista e viene svelata pura all'interno.
+
+Controllati visivamente il viewport **1024×768** e i confronti con trasparenza
+**0 / 0,35 / 0,60**; verificati caricamento reale di **02gold.mp3** e percentuale
+iniziale invariata. Ascolto reale e scelta finale dell'intensità del retino restano
+al playtest sul dispositivo. Nessuna operazione Git eseguita. Funzionalità
+implementate e verificate automaticamente, nessuna modifica alla difficoltà fisica.
+
+## Consegna precedente — Tema musicale dei menu (8 novembre 2026)
+
+### Implementazione e comportamento
+
+`MenuMusic`, aggiunto in `music.py`, riproduce **public/sounds/UPix.mp3** tramite
+lo stream SDL, in loop. La riproduzione comincia all'apertura di `CampaignApp`,
+con volume iniziale zero e fade-in lineare. Tutorial, classifica, cambio lingua
+e overlay debug conservano la posizione del brano: passare fra queste schermate
+non ricarica il file e non ricomincia la dissolvenza. Il tema torna con fade-in
+anche nell'inserimento nome dopo il Game Over o la conclusione della campagna.
+Pausa, DYING, riepilogo livello e scelta del nuovo ciclo conservano invece
+la gestione musicale della partita.
+
+Avvio normale e avvio debug passano dallo stesso percorso: la richiesta conserva
+le impostazioni iniziali immutabili, avvia il fade-out e resta nel menu fino alla
+sua conclusione. Solo allora viene costruito `Game` e avviata la playlist dei
+livelli. In questo modo non si interrompe il tema caricando prematuramente il
+brano del gioco: `MenuMusic` e `MusicPlayer` possiedono lo stream in momenti
+distinti. Il tema del menu non viene aggiunto al sacchetto della campagna, né
+ne consuma un brano; tornare al menu conserva l'ordine residuo dello shuffle.
+
+La dissolvenza è aggiornata dal frame loop usando millisecondi monotoni; non
+usa attese, loop bloccanti o il tick fisico. Eventi e rendering continuano durante
+il fade-out, senza avanzare fisica, timer o RNG del livello ancora da avviare.
+Conferme ripetute non producono ulteriori avvii; Esc annulla la richiesta e
+riporta gradualmente il volume a regime, mantenendo la traccia corrente.
+La chiusura annulla la richiesta pendente e ferma lo stream. Se il focus viene
+perso durante il fade-out, il livello viene inizializzato in pausa.
+
+Il fade-out parte dal volume già raggiunto, anche se viene richiesto durante
+il fade-in. Se il volume iniziale è ancora zero o la durata è configurata a zero,
+la transizione può concludersi immediatamente. File assente/corrotto o mixer non
+disponibile lasciano avviare il gioco senza attesa; la diagnostica resta nel log.
+Il file è gestito in streaming, senza decodificare preventivamente tutto il
+brano da circa 4 MB in una `Sound` residente in memoria.
+
+### Parametri del manifest
+
+| Parametro | Valore corrente |
+| --- | --- |
+| `assets.menu_music` | `sounds/UPix.mp3` |
+| `audio.menu_music_volume` | `0.26` |
+| `audio.menu_fade_in_ms` | `800` |
+| `audio.menu_fade_out_ms` | `500` |
+
+Validati percorso relativo, volume finito fra zero e uno e durate intere non
+negative. Non sono stati cambiati volume/attenuazione durante i tagli, esplosione,
+hitbox o parametri di difficoltà. Il lavoro di fine tuning dei livelli resta
+indipendente da questa consegna.
+
+### Verifiche
+
+Suite completa: **258 test superati in 73,814 s** con
+`.venv\Scripts\python.exe -m unittest discover -s tests -q`.
+Aggiunti dieci test su inviluppo, continuità del
+tema, transizione asincrona, conferme ripetute, annullamento, chiusura, focus,
+configurazioni invalide e fallback senza audio/file. Verificati anche il
+caricamento reale dell'MP3 con SDL dummy, assenza di consumo dello shuffle nel
+menu e tempo del livello fermo a zero al termine della transizione.
+I driver dummy non certificano l'ascolto o la risposta degli altoparlanti;
+fade-in/out e bilanciamento percettivo vanno ascoltati sul dispositivo reale.
+Nessuna operazione Git eseguita. Stato: funzionalità implementata e verificata
+automaticamente; le fasi precedenti restano confermate.
+
+## Consegna precedente — Scossa/Shock e DeathSequence (8 novembre 2026)
 
 ### Nomenclatura unificata
 
@@ -1804,7 +1947,7 @@ Prima della migrazione:
 
 ## Verifiche e limiti residui
 
-Suite corrente: **248 test superati** con:
+Suite corrente: **268 test superati** con:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -1862,6 +2005,8 @@ Progressione delle consegne:
 | Debug / audio / premi | Vita extra al 74%, avvio debug solo in memoria, premi combinati, MP3 dinamici/shuffle e lingua a caldo; 221 test |
 | Audit vite / respawn | Riprodotte morti multiple da input mantenuto; interruzione del recupero alla morte e rilascio richiesto per ripartire, 15/99 vite e percorso menu/finale verificati; 233 test |
 | Localizzazione / morte | Scossa/Shock uniforme, stato DYING, sette fotogrammi/audio e mondo congelato, respawn/finale differiti e regressioni a FPS diversi; 248 test |
+| Tema menu | UPix.mp3 in streaming, fade-in/out non bloccanti, continuità fra schermate e passaggio alla playlist dopo la dissolvenza; 258 test |
+| Tema livello 1 / retino | 02gold.mp3 fisso al livello 1, shuffle dal 2 senza ripetizione immediata, SVG retinati e trasparenza regolabile nelle prime righe del manifest; 268 test |
 
 Il gioco comprende una prima vertical slice di 3 livelli su una campagna
 giocabile di 12, con 5 vite iniziali, vita extra al 74%, scudi per tagli ≥25%,

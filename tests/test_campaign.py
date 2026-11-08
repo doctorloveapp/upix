@@ -22,6 +22,7 @@ from debug_menu import StartSettings
 from input_manager import InputFrame
 from localization import I18N
 from manifest import MANIFEST, MANIFEST_PATH
+from music import MenuMusic
 
 
 class RunScoreTests(unittest.TestCase):
@@ -70,14 +71,21 @@ class CampaignAppTests(unittest.TestCase):
                 return Game(surface, time_source=lambda: self.now, **kwargs)
 
         self.factory = mock.Mock(side_effect=factory)
-        self.app = CampaignApp(self.surface, self.factory, store=JsonScoreStore(self.path))
+        menu_music = MenuMusic(Path(__file__).resolve().parents[1] / 'public/sounds/UPix.mp3',
+                               volume=.26, fade_in_ms=800, fade_out_ms=500,
+                               time_source=lambda: self.now)
+        self.app = CampaignApp(self.surface, self.factory, store=JsonScoreStore(self.path),
+                               menu_music=menu_music)
 
     def tearDown(self):
         self.app.close()
         self.folder.cleanup()
 
-    def press(self, key):
+    def press(self, key, *, settle_start=True):
         self.app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key))
+        if settle_start and self.app.starting_campaign:
+            self.now += self.app.menu_music.fade_out_ms
+            self.app.advance(InputFrame())
 
     def start(self):
         self.press(pygame.K_RETURN)
@@ -110,6 +118,76 @@ class CampaignAppTests(unittest.TestCase):
         self.press(pygame.K_UP)
         self.press(pygame.K_RETURN)
         self.assertEqual(self.app.state, GameState.PLAYING)
+
+    def test_title_music_starts_at_boot_and_continues_across_menu_pages(self):
+        self.assertTrue(self.app.menu_music.active)
+        self.assertTrue(pygame.mixer.music.get_busy())
+        self.assertFalse(self.app.music.enabled)
+        self.assertIsNone(self.app.music.shuffle.last)
+        with mock.patch('pygame.mixer.music.load', wraps=pygame.mixer.music.load) as load:
+            self.now = 800
+            self.app.advance()
+            self.app.selected = MANIFEST['ui']['menu_actions'].index('tutorial')
+            self.press(pygame.K_RETURN)
+            self.press(pygame.K_ESCAPE)
+            self.app.selected = MANIFEST['ui']['menu_actions'].index('scores')
+            self.press(pygame.K_RETURN)
+            self.press(pygame.K_ESCAPE)
+            load.assert_not_called()
+        self.assertAlmostEqual(pygame.mixer.music.get_volume(), .26, delta=1 / 128)
+
+    def test_campaign_waits_for_nonblocking_fade_then_starts_once_without_time_debt(self):
+        self.now = 800
+        self.app.advance()
+        self.press(pygame.K_RETURN, settle_start=False)
+        self.assertTrue(self.app.starting_campaign)
+        self.assertEqual(self.app.state, GameState.MENU)
+        self.factory.assert_not_called()
+        self.press(pygame.K_RETURN, settle_start=False)
+        self.press(pygame.K_DOWN, settle_start=False)
+        self.app.draw()  # Il frame può essere presentato mentre il volume scende.
+        self.now = 1299
+        self.app.advance(InputFrame())
+        self.factory.assert_not_called()
+        self.now = 1300
+        self.app.advance(InputFrame())
+        self.factory.assert_called_once()
+        self.assertFalse(self.app.menu_music.active)
+        self.assertEqual(self.app.state, GameState.PLAYING)
+        self.assertIn(self.app.music.current, self.app.music.shuffle.tracks)
+        self.assertEqual(self.app.game.game_clock.ticks, 0)
+        self.app.advance(InputFrame())
+        self.assertEqual(self.app.game.game_clock.ticks, 0)
+
+    def test_escape_cancels_start_and_close_cannot_launch_a_pending_campaign(self):
+        self.now = 800
+        self.app.advance()
+        with mock.patch('pygame.mixer.music.load', wraps=pygame.mixer.music.load) as load:
+            self.press(pygame.K_RETURN, settle_start=False)
+            self.now += 200
+            self.app.advance()
+            self.press(pygame.K_ESCAPE)
+            self.assertFalse(self.app.starting_campaign)
+            self.assertTrue(self.app.menu_music.active)
+            load.assert_not_called()
+        self.now += 800
+        self.app.advance()
+        self.press(pygame.K_RETURN, settle_start=False)
+        self.app.close()
+        self.assertFalse(self.app.starting_campaign)
+        self.assertFalse(self.app.menu_music.active)
+        self.assertFalse(pygame.mixer.music.get_busy())
+        self.factory.assert_not_called()
+
+    def test_focus_loss_during_fade_starts_level_paused(self):
+        self.now = 800
+        self.app.advance()
+        self.press(pygame.K_RETURN, settle_start=False)
+        self.app.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST))
+        self.now += 500
+        self.app.advance()
+        self.assertEqual(self.app.state, GameState.PAUSED)
+        self.assertEqual(self.app.game.game_clock.ticks, 0)
 
     def test_summary_freezes_score_and_total_survives_next_level(self):
         game = self.start()

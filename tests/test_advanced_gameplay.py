@@ -20,6 +20,7 @@ from shock_system import ShockSystem
 from input_manager import InputFrame
 from level_config import get_level_config
 from manifest import MANIFEST
+from music import MenuMusic
 import Upqix89 as upix
 
 
@@ -169,7 +170,9 @@ class AdvancedTests(unittest.TestCase):
             self.assertGreaterEqual(extreme.missile_interval_ms, 300)
 
     def test_tutorial_and_shield_action_are_routed_through_application(self):
-        app = CampaignApp(self.screen, lambda surface, **kwargs: self.game)
+        menu_music = MenuMusic(upix.ASSET_DIR / MANIFEST['assets']['menu_music'],
+                               volume=.26, fade_in_ms=0, fade_out_ms=0)
+        app = CampaignApp(self.screen, lambda surface, **kwargs: self.game, menu_music=menu_music)
         try:
             for _ in range(2):
                 app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DOWN))

@@ -39,6 +39,14 @@ def load_manifest(path=MANIFEST_PATH):
             raise ValueError('Versione manifest non supportata')
         if not isinstance(data['campaign_id'], str) or not data['campaign_id']:
             raise ValueError('Identificativo campagna mancante')
+        cover = data['level_cover']
+        for key in ('transparency', 'halftone_strength'):
+            value = cover[key]
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f'{key}: richiesto numero finito fra zero e uno')
+        _positive(cover['halftone_spacing_px'], 'halftone_spacing_px')
+        if cover['halftone_spacing_px'] > min(data['engine']['logical_size']):
+            raise ValueError('Passo del retino maggiore del campo')
         engine = data['engine']
         for key in ('logical_size', 'window_size', 'player_max_size'):
             if len(engine[key]) != 2:
@@ -57,7 +65,8 @@ def load_manifest(path=MANIFEST_PATH):
         if engine['empty_cell'] == engine['filled_cell']:
             raise ValueError('Stati delle celle indistinguibili')
         for key in ('root', 'player_sprite', 'frame', 'energy_sprite', 'shield_sprite',
-                    'life_sprite', 'music_dir', 'boss_dir', 'death_sound'):
+                    'life_sprite', 'music_dir', 'boss_dir', 'death_sound', 'menu_music',
+                    'first_level_music'):
             _relative(data['assets'][key])
         frames = data['assets']['death_frames']
         if not isinstance(frames, list) or not frames or len(set(frames)) != len(frames):
@@ -131,6 +140,12 @@ def load_manifest(path=MANIFEST_PATH):
                 value not in ('.png', '.jpg', '.jpeg') for value in data['assets']['primary_suffixes']):
             raise ValueError('Formati primari non supportati')
         audio = data['audio']
+        for key in ('menu_fade_in_ms', 'menu_fade_out_ms'):
+            if type(audio[key]) is not int or audio[key] < 0:
+                raise ValueError(f'{key}: richiesti millisecondi interi non negativi')
+        volume = audio['menu_music_volume']
+        if type(volume) not in (int, float) or not math.isfinite(volume) or not 0 <= volume <= 1:
+            raise ValueError('Volume musica menu non valido')
         if not audio['music_extensions'] or any(value != '.mp3' for value in audio['music_extensions']):
             raise ValueError('Estensioni musica non supportate')
         debug = data['debug_menu']

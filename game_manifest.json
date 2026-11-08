@@ -2,6 +2,11 @@
   "schema_version": 1,
   "campaign_id": "upix1989-campaign-v1",
   "title": "UPIX 1989 - Reveal The Image",
+  "level_cover": {
+    "transparency": 0.35,
+    "halftone_spacing_px": 4,
+    "halftone_strength": 0.55
+  },
   "engine": {
     "logical_size": [
       800,
@@ -57,7 +62,9 @@
       "icon/death_sequence/cursor_lukso_death6.png",
       "icon/death_sequence/cursor_lukso_death7.png"
     ],
-    "death_sound": "icon/death_sequence/esplosione.mp3"
+    "death_sound": "icon/death_sequence/esplosione.mp3",
+    "menu_music": "sounds/UPix.mp3",
+    "first_level_music": "music/02gold.mp3"
   },
   "death_sequence": {
     "frame_duration_ms": 100,
@@ -94,6 +101,9 @@
     "sample_bits": -16,
     "channels": 2,
     "buffer_size": 512,
+    "menu_music_volume": 0.26,
+    "menu_fade_in_ms": 800,
+    "menu_fade_out_ms": 500,
     "music_extensions": [
       ".mp3"
     ]

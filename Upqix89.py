@@ -3,7 +3,8 @@ import math
 import random
 from pathlib import Path
 from time import perf_counter_ns
-from assets import load_animation_frames, load_level_cover, load_level_image, load_sprite
+from assets import (compose_level_cover, load_animation_frames, load_level_cover,
+                    load_level_image, load_sprite)
 from campaign import LevelResult, RunScore
 from manifest import MANIFEST, ROOT
 from collisions import (AABB, CollisionGrid, move_body, move_projectile,
@@ -310,7 +311,7 @@ class Game:
         pygame.mixer.music.set_volume(DRAW_MUSIC_VOLUME)
 
     def _play_music(self):
-        self.music.ensure_playing()
+        self.music.play_level(self.level, ASSET_DIR / MANIFEST['assets']['first_level_music'])
 
     def start_level(self):
         if self.state in (GameState.PAUSED, GameState.DYING):
@@ -327,7 +328,7 @@ class Game:
         self.perimeter_threat = None
         self.level_score = LevelScore(self.level_config.scoring, COLS * ROWS)
         self.boss_img = self._load_boss_sprite()
-        self._play_music()  # Non interrompe il brano corrente al cambio livello.
+        self._play_music()  # Livello 1 fisso; dal 2 shuffle senza riavvii fra livelli.
         self.physics_error = None
         self.grid = [[EMPTY for _ in range(ROWS)] for _ in range(COLS)]
         self.collision_grid = CollisionGrid(self.grid, CELL_SIZE, FILLED)
@@ -340,12 +341,14 @@ class Game:
             self.hidden_image = self._create_fallback_image()
 
         # --- SURFACE DI GIOCO (CANVAS) ---
-        # L'SVG copre il campo; la conquista lo sostituisce con l'immagine primaria.
-        self.canvas, self.cover_source = load_level_cover(
+        # Composizione statica: SVG retinato sopra la primaria appena intravista.
+        cover, self.cover_source = load_level_cover(
             ASSET_DIR, self.level, (WIDTH, HEIGHT), source=self.level_config.cover)
-        if self.canvas is None:
+        if cover is None:
             self.canvas = pygame.Surface((WIDTH, HEIGHT)).convert()
             self.canvas.fill(COLOR_BG_COVER)
+        else:
+            self.canvas = compose_level_cover(self.hidden_image, cover, MANIFEST['level_cover'])
         print(f"Livello {self.level}: immagine={self.primary_image_source or 'procedurale'}, "
               f"copertura={self.cover_source or 'neutra'}")
 

@@ -26,6 +26,23 @@ from territory import plan_capture
 
 
 class GameTests(unittest.TestCase):
+    def test_first_level_theme_switches_to_shuffle_and_returns_in_next_cycle(self):
+        game = self.game
+        self.assertEqual(game.music.current.name, '02gold.mp3')
+        with mock.patch('pygame.mixer.music.load', wraps=pygame.mixer.music.load) as load:
+            game._play_music()
+            load.assert_not_called()
+        with contextlib.redirect_stdout(io.StringIO()):
+            game.next_level()
+        self.assertEqual(game.level, 2)
+        self.assertNotEqual(game.music.current.name, '02gold.mp3')
+        game.level = 12
+        game._set_state(GameState.CAMPAIGN_COMPLETE)
+        with contextlib.redirect_stdout(io.StringIO()):
+            game.continue_cycle()
+        self.assertEqual((game.level, game.cycle), (1, 2))
+        self.assertEqual(game.music.current.name, '02gold.mp3')
+
     @classmethod
     def setUpClass(cls):
         pygame.init()
@@ -465,11 +482,13 @@ class GameTests(unittest.TestCase):
             with mock.patch.object(upix, "ASSET_DIR", root):
                 with contextlib.redirect_stdout(io.StringIO()):
                     g.start_level()
-            self.assertEqual(g.canvas.get_at((100, 100))[:3], (180, 40, 20))
+            preview = g.canvas.get_at((100, 100))[:3]
+            self.assertNotEqual(preview, (180, 40, 20))
+            self.assertNotEqual(preview, (20, 40, 180))
             self.assertEqual(g.hidden_image.get_at((100, 100))[:3], (20, 40, 180))
             self.short_capture()
             self.assertEqual(g.canvas.get_at((405, 594))[:3], (20, 40, 180))
-            self.assertEqual(g.canvas.get_at((100, 100))[:3], (180, 40, 20))
+            self.assertEqual(g.canvas.get_at((100, 100))[:3], preview)
             g._set_state(GameState.LEVEL_CLEAR)
             g.draw()
             self.assertEqual(self.screen.get_at((100, 100))[:3], (20, 40, 180))
@@ -1054,10 +1073,12 @@ class MainLoopTests(unittest.TestCase):
                              game.boss_img.get_size())
 
         with mock.patch.object(upix, 'Game', side_effect=build_game), \
+                mock.patch('application.MenuMusic') as menu_type, \
                 mock.patch('pygame.event.get', side_effect=events), \
                 mock.patch('pygame.time.Clock') as render_clock, \
                 mock.patch.object(upix.Viewport, 'present', autospec=True, side_effect=present), \
                 contextlib.redirect_stdout(io.StringIO()):
+            menu_type.return_value.active = False  # La temporizzazione audio ha regressioni dedicate.
             upix.main()
         self.assertEqual(snapshots, [(GameState.MENU, 0), (GameState.PLAYING, 0),
                                     (GameState.PAUSED, 0), (GameState.PAUSED, 0),

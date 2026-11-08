@@ -12,7 +12,58 @@ os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame
 import resvg_py
-from assets import _svg_png, load_level_cover, load_level_image
+from assets import _svg_png, compose_level_cover, load_level_cover, load_level_image
+
+
+class CoverCompositionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pygame.display.init()
+        pygame.display.set_mode((1, 1))
+
+    @classmethod
+    def tearDownClass(cls):
+        pygame.display.quit()
+
+    def images(self, size=(12, 9)):
+        primary = pygame.Surface(size).convert()
+        primary.fill((20, 40, 180))
+        cover = pygame.Surface(size).convert()
+        cover.fill((180, 40, 20))
+        return primary, cover
+
+    def test_transparency_endpoints_show_opaque_cover_or_clean_primary(self):
+        primary, cover = self.images()
+        for value, expected in ((0, cover), (1, primary)):
+            config = dict(transparency=value, halftone_spacing_px=4, halftone_strength=0)
+            result = compose_level_cover(primary, cover, config)
+            self.assertEqual(pygame.image.tobytes(result, 'RGB'), pygame.image.tobytes(expected, 'RGB'))
+
+    def test_partial_transparency_blends_without_changing_source_images(self):
+        primary, cover = self.images()
+        before = [pygame.image.tobytes(image, 'RGB') for image in (primary, cover)]
+        config = dict(transparency=.5, halftone_spacing_px=4, halftone_strength=0)
+        result = compose_level_cover(primary, cover, config)
+        for actual, expected in zip(result.get_at((0, 0))[:3], (100, 40, 100)):
+            self.assertAlmostEqual(actual, expected, delta=1)
+        self.assertEqual(before, [pygame.image.tobytes(image, 'RGB') for image in (primary, cover)])
+
+    def test_halftone_repeats_on_odd_sized_canvas_and_can_be_disabled(self):
+        primary, cover = self.images((13, 11))
+        config = dict(transparency=0, halftone_spacing_px=4, halftone_strength=.6)
+        result = compose_level_cover(primary, cover, config)
+        self.assertNotEqual(result.get_at((2, 2)), result.get_at((0, 0)))
+        self.assertEqual(result.get_at((2, 2)), result.get_at((6, 6)))
+        self.assertEqual(result.get_at((12, 10)), result.get_at((0, 2)))
+        config['halftone_strength'] = 0
+        plain = compose_level_cover(primary, cover, config)
+        self.assertEqual(pygame.image.tobytes(plain, 'RGB'), pygame.image.tobytes(cover, 'RGB'))
+
+    def test_mismatched_surfaces_are_rejected(self):
+        primary, cover = self.images()
+        with self.assertRaises(ValueError):
+            compose_level_cover(primary, pygame.Surface((1, 1)),
+                                dict(transparency=.5, halftone_spacing_px=4, halftone_strength=.5))
 
 
 class BackgroundTests(unittest.TestCase):

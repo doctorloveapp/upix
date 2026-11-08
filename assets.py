@@ -113,3 +113,33 @@ def load_level_image(asset_dir: Path, level: int,
     """
     source = source if source is not None else MANIFEST['levels'][level - 1]['primary']
     return _load_level_asset(asset_dir, level, size, MANIFEST['assets']['primary_suffixes'], source)
+
+
+def compose_level_cover(primary, cover, config):
+    """Compone una sola volta SVG retinato e primaria, senza alterare le sorgenti.
+
+    Trasparenza 0: copertura opaca; 1: primaria visibile. Il retino e il blend
+    riguardano soltanto il canvas iniziale; conquistare copia la primaria pura.
+    """
+    if primary.get_size() != cover.get_size():
+        raise ValueError('Primaria e copertura devono avere le stesse dimensioni')
+    if config['transparency'] == 1:
+        return primary.copy()
+    overlay = cover.copy()
+    strength = round(255 * config['halftone_strength'])
+    if strength:
+        spacing = config['halftone_spacing_px']
+        tile = pygame.Surface((spacing, spacing), pygame.SRCALPHA)
+        pygame.draw.circle(tile, (0, 0, 0, strength),
+                           (spacing // 2, spacing // 2), max(1, spacing // 4))
+        # Una riga di tasselli ripetuta verticalmente: nessun ciclo per pixel
+        # e nessun pattern da ricostruire nel rendering o nel tick fisico.
+        row = pygame.Surface((overlay.get_width(), spacing), pygame.SRCALPHA)
+        for x in range(0, row.get_width(), spacing):
+            row.blit(tile, (x, 0))
+        for y in range(0, overlay.get_height(), spacing):
+            overlay.blit(row, (0, y))
+    overlay.set_alpha(round(255 * (1 - config['transparency'])))
+    canvas = primary.copy()
+    canvas.blit(overlay, (0, 0))
+    return canvas

@@ -10,6 +10,23 @@ from manifest import MANIFEST, MANIFEST_PATH, load_manifest
 
 
 class ManifestTests(unittest.TestCase):
+    def test_cover_controls_and_first_level_music_are_validated(self):
+        for section, key, value in (
+                ('level_cover', 'transparency', -0.1),
+                ('level_cover', 'transparency', 1.1),
+                ('level_cover', 'transparency', True),
+                ('level_cover', 'halftone_strength', float('nan')),
+                ('level_cover', 'halftone_spacing_px', 0),
+                ('level_cover', 'halftone_spacing_px', 10_000),
+                ('assets', 'first_level_music', '../02gold.mp3')):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as folder:
+                data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
+                data[section][key] = value
+                path = Path(folder) / 'bad.json'
+                path.write_text(json.dumps(data), encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    load_manifest(path)
+
     def test_profiles_and_resources_come_from_the_manifest(self):
         data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
         for config, source in zip(LEVEL_CONFIGS, data['levels']):
@@ -82,6 +99,21 @@ class ManifestTests(unittest.TestCase):
                 ('death_sequence', 'sound_volume', True),
                 ('death_sequence', 'sound_volume', 2)):
             with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as folder:
+                data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
+                data[section][key] = value
+                path = Path(folder) / 'bad.json'
+                path.write_text(json.dumps(data), encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    load_manifest(path)
+
+    def test_menu_music_path_fades_and_volume_are_validated(self):
+        for section, key, value in (
+                ('assets', 'menu_music', '../UPix.mp3'),
+                ('audio', 'menu_fade_in_ms', -1),
+                ('audio', 'menu_fade_out_ms', True),
+                ('audio', 'menu_music_volume', float('nan')),
+                ('audio', 'menu_music_volume', 1.1)):
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as folder:
                 data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
                 data[section][key] = value
                 path = Path(folder) / 'bad.json'

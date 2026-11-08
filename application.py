@@ -10,7 +10,7 @@ from manifest import MANIFEST, ROOT
 from input_manager import InputManager
 from localization import I18N, tr
 from debug_menu import CheatSequence, StartSettings
-from music import MusicPlayer
+from music import MenuMusic, MusicPlayer
 
 TEXT = I18N
 
@@ -54,15 +54,22 @@ class ScreenRenderer:
 
 
 class CampaignApp:
-    def __init__(self, surface, game_factory, *, store=None, input_manager=None, music_player=None):
+    def __init__(self, surface, game_factory, *, store=None, input_manager=None, music_player=None,
+                 menu_music=None):
         self.surface = surface
         self.game_factory = game_factory
         self.store = store if store is not None else JsonScoreStore()
-        self.game = None  # Nessun livello o stream audio avviato al menu.
+        self.game = None  # La simulazione viene creata soltanto dopo il fade del menu.
         self.input = input_manager if input_manager is not None else InputManager()
         self.music = music_player if music_player is not None else MusicPlayer(
             ROOT / MANIFEST['assets']['root'] / MANIFEST['assets']['music_dir'],
             volume=MANIFEST['audio']['music_volume'], extensions=MANIFEST['audio']['music_extensions'])
+        audio = MANIFEST['audio']
+        self.menu_music = menu_music if menu_music is not None else MenuMusic(
+            ROOT / MANIFEST['assets']['root'] / MANIFEST['assets']['menu_music'],
+            volume=audio['menu_music_volume'], fade_in_ms=audio['menu_fade_in_ms'],
+            fade_out_ms=audio['menu_fade_out_ms'])
+        self._pending_start = None
         self.cheat = CheatSequence(MANIFEST['debug_menu']['sequence'])
         self.debug_settings = StartSettings()
         self.debug_selected = 0
@@ -77,27 +84,50 @@ class CampaignApp:
         self._won = False
         self._scores_failed = False
         self.cycle_selected = 0
+        self._enter_menu_music()
 
     @property
     def state(self):
         return self.game.state if self._state == GameState.PLAYING else self._state
 
-    def _menu(self):
+    @property
+    def starting_campaign(self):
+        return self._pending_start is not None
+
+    def _enter_menu_music(self):
+        if not self.menu_music.active:
+            self.music.stop()
+        self.menu_music.start()
+
+    def _menu(self, *, play_music=True):
+        self._pending_start = None
         pygame.key.stop_text_input()
         if self.game is not None:
             self.game._resume_audio()
             self.game._stop_draw_audio()
             self.game._cancel_capture()
             self.game.cancel_death()
-        if pygame.mixer.get_init():
-            pygame.mixer.music.stop()
         self.game = None
-        self.music.stop()
         self.cheat.reset()
         self._state = GameState.MENU
         self.message = ''
+        if play_music:
+            self._enter_menu_music()
+        else:
+            self.menu_music.stop()
+            self.music.stop()
 
     def _start_campaign(self, options=None):
+        if self.starting_campaign:
+            return
+        self._pending_start = options if options is not None else StartSettings()
+        self.menu_music.fade_out()
+        if not self.menu_music.active:
+            self._launch_campaign()
+
+    def _launch_campaign(self):
+        options = self._pending_start
+        self._pending_start = None
         arguments = {'music_player': self.music}
         if options is not None:
             arguments['start_options'] = options
@@ -106,6 +136,8 @@ class CampaignApp:
         self._won = False
         self.cheat.reset()
         self._state = GameState.PLAYING
+        if not self.input.focused:
+            self.game.pause()
 
     def _scores(self):
         pygame.key.stop_text_input()
@@ -119,6 +151,7 @@ class CampaignApp:
             self.message = TEXT['scores_error']
 
     def _name_entry(self):
+        self._enter_menu_music()
         self._state = GameState.NAME_ENTRY
         self.name = ''
         self.message = ''
@@ -137,6 +170,13 @@ class CampaignApp:
             self.cheat.reset()
             if self.game is not None:
                 self.game.pause()
+            return
+        if self.starting_campaign:
+            if 'back' in actions:
+                self._pending_start = None
+                self.menu_music.start()
+            elif 'quit' in actions:
+                self.running = False
             return
         if event.type == pygame.TEXTINPUT and self.state == GameState.NAME_ENTRY:
             limit = MANIFEST['leaderboard']['name_max_chars']
@@ -241,6 +281,11 @@ class CampaignApp:
                 self.running = False
 
     def advance(self, keys=None):
+        if self.starting_campaign:
+            self.menu_music.update()
+            if not self.menu_music.active:
+                self._launch_campaign()
+            return
         if self._state == GameState.PLAYING:
             frame = keys if keys is not None else self.input.sample()
             self.game.advance_frame(frame)
@@ -251,7 +296,10 @@ class CampaignApp:
                 self._state = GameState.CAMPAIGN_COMPLETE
                 self.cycle_selected = 0
         else:
-            self.music.update()
+            if self.menu_music.active:
+                self.menu_music.update()
+            else:
+                self.music.update()
 
     def draw(self):
         state = self.state
@@ -310,6 +358,6 @@ class CampaignApp:
         return self.game.hud_data() if self.game is not None else HudData(0, 0, 0, 0, 0, 0, '')
 
     def close(self):
-        self._menu()
+        self._menu(play_music=False)
         self.debug_settings = StartSettings()
         self.input.close()

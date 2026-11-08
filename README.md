@@ -187,16 +187,30 @@ La taratura completa richiede playtest sul dispositivo reale.
 
 ## Musica dinamica
 
+Il **livello 1** riproduce sempre **public/music/02gold.mp3** in loop, anche nei
+cicli successivi. Il percorso è configurabile in `assets.first_level_music`.
+Dal livello 2 torna lo shuffle; il tema già ascoltato viene conteggiato nel giro,
+evitando che si ripeta subito. Gli avvii debug da livelli successivi usano lo shuffle.
+
+Nei menu suona **public/sounds/UPix.mp3** in loop, con fade-in di **800 ms**.
+Passare fra menu, tutorial, classifica e debug mantiene il brano in corso.
+All'avvio normale o debug della campagna, un fade-out di **500 ms** precede
+il caricamento del livello: eventi e rendering restano attivi durante la
+transizione. Esc può annullarla. Il tema ritorna anche nell'inserimento nome.
+Percorso, volume (**0,26**) e durate sono configurabili in `assets.menu_music`
+e `audio.menu_music_volume` / `menu_fade_in_ms` / `menu_fade_out_ms`.
+
 All'avvio `MusicShuffle` legge tutti gli MP3 in **public/music**, anche con
 estensione maiuscola. Ogni giro riproduce tutti i brani una sola volta; poi
 ricarica e rimescola il catalogo, evitando anche la ripetizione immediata fra
 due giri se ci sono almeno due file. Con un solo MP3 la ripetizione è inevitabile.
 Per aggiungere musica basta copiare il file e riavviare l'applicazione.
 
-Ogni brano termina naturalmente, senza essere interrotto dal cambio livello.
+Dal livello 2 ogni brano termina naturalmente, senza essere interrotto dal cambio livello.
 Playlist e RNG musicale sono separati dalla simulazione. La pausa conserva il
-brano; tornare al menu ferma la musica senza svuotare il sacchetto. Non servono
-nomi di brani nel manifest o nel codice. Cartella vuota/file corrotti non
+brano; tornare al menu ferma la playlist e ripristina il tema senza svuotare il
+sacchetto. I brani casuali della campagna non richiedono nomi nel manifest o nel codice.
+Cartella vuota/file corrotti non
 bloccano il gioco; la riproduzione non è gapless.
 
 ## Audio della saldatrice
@@ -327,6 +341,24 @@ Il passo predefinito di 5° limita la cache a 72 rotazioni per taglia.
 
 ## Architettura e cattura delle aree
 
+La sezione **level_cover**, nelle prime righe di `game_manifest.json`, regola
+la copertura SVG retinata:
+
+```json
+"level_cover": {
+  "transparency": 0.35,
+  "halftone_spacing_px": 4,
+  "halftone_strength": 0.55
+}
+```
+
+`transparency`: **0** nasconde la primaria, **1** la mostra completamente.
+Aumentare il valore lascia intravedere di più il quadro. `halftone_spacing_px`
+regola il passo dei punti; `halftone_strength` l'intensità (0 disattiva il retino).
+Riavviare il gioco dopo le modifiche. L'effetto è preparato al caricamento e
+riguarda la grafica: griglia, percentuale e collisioni restano indipendenti.
+Le aree conquistate mostrano sempre la primaria pulita.
+
 Il campo 800 × 600 px usa celle da 2 px: **400 × 300 = 120.000 celle**. `grid[x][y]` contiene `EMPTY` o `FILLED`; la scia in corso è conservata separatamente.
 
 Alla chiusura della linea, `fill_area()`:
@@ -399,7 +431,7 @@ naturalmente dopo la fine dell'animazione; la musica riprende al respawn/finale.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-I **248 test** coprono geometria/solver, missili continui, stati/pausa, timer,
+I **268 test** coprono geometria/solver, missili continui, stati/pausa, timer,
 cattura, audio, respawn, vittoria,
 progressione, le 12 coppie copertura/immagine primaria senza label, cache, rendering
 del boss e fallback. Una regressione con SVG e PNG di colori distinti verifica
