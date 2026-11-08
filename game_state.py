@@ -11,7 +11,9 @@ MAX_STEPS_PER_FRAME = MANIFEST['engine']['max_steps_per_frame']
 
 class GameState(Enum):
     MENU = auto()
+    DEBUG_MENU = auto()
     HIGHSCORES = auto()
+    TUTORIAL = auto()
     NAME_ENTRY = auto()
     CAMPAIGN_COMPLETE = auto()
     PLAYING = auto()

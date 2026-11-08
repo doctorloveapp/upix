@@ -46,7 +46,7 @@ class ScoreEntry:
             raise ValueError('Nome o data non normalizzati')
         if (type(self.score) is not int or not 0 <= self.score <= MANIFEST['leaderboard']['max_score']
                 or type(self.levels_completed) is not int
-                or not 0 <= self.levels_completed <= len(MANIFEST['levels'])
+                or not 0 <= self.levels_completed <= MANIFEST['leaderboard']['max_completed_levels']
                 or type(self.elapsed_ms) is not int or self.elapsed_ms < 0
                 or type(self.completed) is not bool):
             raise ValueError('Risultato classifica fuori intervallo')

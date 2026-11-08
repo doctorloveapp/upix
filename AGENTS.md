@@ -5,8 +5,12 @@
 - Operare come Senior Game Engine Developer e Technical Lead: privilegiare
   stabilità, leggibilità, determinismo e coerenza della fisica.
 - Rendere espliciti i parametri di simulazione. Ultima direttiva dell'utente:
-  la hitbox AABB del boss deve coincidere sempre con le dimensioni dello sprite;
-  usare un unico parametro condiviso per grafica e fisica.
+  le hitbox AABB di tutti i dodici boss e del player devono coincidere sempre
+  con le dimensioni dei rispettivi sprite; usare un unico parametro condiviso
+  per grafica e fisica. La navigazione del player usa la frontiera, mentre
+  l'intera AABB determina i contatti con le entità.
+- Il tick fisico riceve InputFrame e non legge dispositivi. InputManager
+  normalizza tastiera/controller; le label UI appartengono ai cataloghi IT/EN.
 - Verificare le modifiche al core con regressioni significative e scenari
   deterministici; documentare cosa è stato verificato e gli eventuali limiti.
 - Aggiornare REPORT_SVILUPPO.md alla fine di ogni task con modifiche, verifiche,

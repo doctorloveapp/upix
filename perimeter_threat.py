@@ -159,16 +159,19 @@ class PerimeterThreat:
     corta; in parità viene mantenuto il verso precedente.
     """
 
-    def __init__(self, route, distance, *, speed_per_tick, body_size):
+    def __init__(self, route, distance, *, speed_per_tick, body_size, fixed_direction=None):
         if (not math.isfinite(distance) or not math.isfinite(speed_per_tick) or speed_per_tick <= 0
                 or len(body_size) != 2
                 or any(not math.isfinite(v) or v <= 0 for v in body_size)):
             raise ValueError('Parametri scossa non validi')
+        if fixed_direction not in (None, -1, 1):
+            raise ValueError('Verso scossa non valido')
         self.route = route
         self.distance = distance % route.length
         self.speed_per_tick = speed_per_tick
         self.body_size = tuple(body_size)
         self.direction = 1
+        self.fixed_direction = fixed_direction
         self.velocity = (1.0, 0.0)
 
     @classmethod
@@ -193,14 +196,18 @@ class PerimeterThreat:
     def advance(self, target, player=None):
         if player is not None and self.body.overlaps(player):
             return True
-        projected = self.route.project(target)[1]
-        forward = (projected - self.distance) % self.route.length
-        backward = (self.distance - projected) % self.route.length
-        if forward < backward:
-            self.direction = 1
-        elif backward < forward:
-            self.direction = -1
-        movement = min(self.speed_per_tick, forward if self.direction > 0 else backward)
+        if self.fixed_direction is not None:
+            self.direction = self.fixed_direction
+            movement = min(self.speed_per_tick, self.route.length)
+        else:
+            projected = self.route.project(target)[1]
+            forward = (projected - self.distance) % self.route.length
+            backward = (self.distance - projected) % self.route.length
+            if forward < backward:
+                self.direction = 1
+            elif backward < forward:
+                self.direction = -1
+            movement = min(self.speed_per_tick, forward if self.direction > 0 else backward)
         for a, b in self.route.travel(self.distance, movement * self.direction):
             dx, dy = b[0] - a[0], b[1] - a[1]
             self.velocity = (dx, dy)

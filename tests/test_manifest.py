@@ -54,8 +54,8 @@ class ManifestTests(unittest.TestCase):
     def test_invalid_perimeter_and_rotation_configuration_is_rejected(self):
         for section, field, value in (
                 ('perimeter_threat', 'enabled', 1),
-                ('perimeter_threat', 'speed_px_per_second', 0),
-                ('perimeter_threat', 'speed_px_per_second', float('inf')),
+                ('perimeter_threat', 'speed_multiplier', 0),
+                ('perimeter_threat', 'speed_multiplier', float('inf')),
                 ('perimeter_threat', 'body_size', [0, 10]),
                 ('perimeter_threat', 'sprite_max_size', [10]),
                 ('energy_visual', 'rotation_step_degrees', 7),

@@ -10,19 +10,29 @@ non è stato modificato né pubblicato nulla sul sito.
 ## Implementato in questa consegna
 
 - Campagna desktop con menu iniziale, riepiloghi, Run Score, finale dopo il
-  dodicesimo livello e nome per la classifica alla fine della partita.
+  dodicesimo livello, scelta di nuovi cicli e nome per la classifica alla fine
+  della partita. Aggiornamento 8 novembre: controller, cataloghi IT/EN, AABB
+  complete, scudi, vita extra e due micce dal livello 5 implementati sul desktop.
+  Sono ora disponibili anche lingua a caldo, premi combinati, avvio debug in
+  memoria e playlist musicale scoperta automaticamente dal filesystem.
 - `JsonScoreStore`: `user_data/highscores.json`, UTF-8, versione e campagna,
   ordinamento stabile, massimo dieci risultati e scrittura atomica.
 - `BrowserScoreStore`: stesso contratto, storage Web iniettato con `getItem` e
   `setItem`. Testato con un fake del bridge; non è una build WebAssembly collaudata.
 - `game_manifest.json`: contenuti, campagna, asset, dimensioni, audio, input,
-  testi, cornice, nomi delle chiavi storage e namespace API. Il fingerprint
+  riferimenti ai cataloghi IT/EN, cornice, chiavi storage e namespace API. Il fingerprint
   identifica la configurazione distribuita; non è una prova di autenticità.
 
 Il bonus di un livello viene congelato al completamento. Il totale consolidato
 persiste in memoria fra i livelli; il bonus del livello in corso può ancora
 decrescere. La classifica salva il totale al Game Over o a fine campagna.
 Non è stato aggiunto un salvataggio/ripristino della partita a metà livello.
+I risultati sono indicizzati per ciclo/livello; `levels_completed` può superare
+12. Il Run Score resta in memoria tra i cicli e viene registrato solo al termine.
+Il futuro replay deve includere anche l'attivazione dello scudo e la scelta
+continua/termina, usando tick globali del run anziché azzerarli a ogni livello.
+L'enum del contratto proposto è stato aggiornato; recorder e verifica server
+restano da implementare. Regole nuove richiedono un ruleset competitivo distinto.
 
 ## Pubblicazione proposta
 
@@ -34,6 +44,12 @@ Non è stato aggiunto un salvataggio/ripristino della partita a metà livello.
    `async` che ceda il controllo al browser; il loop desktop corrente non va
    pubblicato semplicemente come Python su una pagina.
    [Documentazione primaria Pygbag](https://github.com/pygame-web/pygbag/blob/main/README.md).
+   Includere entrambi i cataloghi e passare la lingua del browser al Localizer;
+   verificare la mappatura dei gamepad nel runtime Web invece di assumere che
+   il collaudo joystick SDL desktop certifichi anche quella piattaforma.
+   La scansione musicale desktop dovrà vedere il filesystem virtuale degli
+   asset inclusi nella build: aggiungere MP3 sul server senza una nuova build
+   richiederebbe un catalogo HTTP dedicato, non implementato in questa consegna.
 3. Esportare prima della build le coperture SVG in PNG alla dimensione logica:
    `resvg_py` è una dipendenza nativa del desktop e non è stata verificata su
    WebAssembly. Bundlare un font e verificare decoder audio, avvio tramite gesto

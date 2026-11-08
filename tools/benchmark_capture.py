@@ -69,6 +69,7 @@ def measure(cut_x, boss_x):
 if __name__ == '__main__':
     pygame.init()
     try:
-        print(json.dumps([measure(200, 200), measure(60, 60)], indent=2))
+        # Il caso stretto lascia almeno 160 px al boss largo fino a 134 px.
+        print(json.dumps([measure(200, 200), measure(80, 80)], indent=2))
     finally:
         pygame.quit()

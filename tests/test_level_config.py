@@ -8,12 +8,10 @@ from fuse import Fuse
 
 
 class LevelConfigTests(unittest.TestCase):
-    def test_first_three_levels_have_distinct_sprite_music_and_progression(self):
+    def test_first_three_levels_have_distinct_sprite_and_progression(self):
         tutorial, missiles, aggressive = (get_level_config(level) for level in (1, 2, 3))
         self.assertEqual([config.boss_sprite for config in (tutorial, missiles, aggressive)],
                          ['boss1.png', 'boss2.png', 'boss3.png'])
-        self.assertEqual([config.music for config in (tutorial, missiles, aggressive)],
-                         ['01pink.mp3', '02gold.mp3', '03silver.mp3'])
         self.assertEqual([config.missile_interval_ms for config in (tutorial, missiles, aggressive)],
                          [2400, 2250, 2100])
         self.assertEqual([config.missile_speed for config in (tutorial, missiles, aggressive)],

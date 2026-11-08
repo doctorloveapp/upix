@@ -113,3 +113,30 @@ class ViewportTests(unittest.TestCase):
         with mock.patch('pygame.display.flip'):
             viewport.present(lambda target: hud.draw(target, HudData(12, 0, 100, 80, 1_200_000, 1, '')))
         self.assertEqual(window.get_at(viewport.bounds.center)[:3], (20, 80, 120))
+
+    def test_shield_inventory_changes_the_readable_header_without_changing_lives(self):
+        window = pygame.display.set_mode((1024, 768))
+        hud = Hud(1024)
+        hud.draw(window, HudData(1, 5, 20, 80, 100, 20, '', shields=1))
+        bounds = hud.value_bounds['lives']
+        before = pygame.image.tobytes(window.subsurface(bounds), 'RGB')
+        hud.draw(window, HudData(1, 5, 20, 80, 100, 20, '', shields=2))
+        self.assertNotEqual(before, pygame.image.tobytes(window.subsurface(bounds), 'RGB'))
+
+    def test_language_switch_invalidates_hud_cache_without_reloading_assets(self):
+        from localization import I18N
+        original = I18N.language
+        window = pygame.display.set_mode((1024, 768))
+        hud = Hud(1024)
+        data = HudData(1, 5, 20, 80, 100, 20, '', shields=2)
+        geometry = hud.game_area.copy()
+        hud.draw(window, data)
+        before = pygame.image.tobytes(window.subsurface((0, 0, 1024, 65)), 'RGB')
+        try:
+            with mock.patch('pygame.image.load', side_effect=AssertionError('I/O durante cambio lingua')):
+                I18N.toggle()
+                hud.draw(window, data)
+            self.assertNotEqual(before, pygame.image.tobytes(window.subsurface((0, 0, 1024, 65)), 'RGB'))
+            self.assertEqual(hud.game_area, geometry)
+        finally:
+            I18N.set_language(original)

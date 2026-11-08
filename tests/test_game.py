@@ -104,7 +104,7 @@ class GameTests(unittest.TestCase):
         self.assertGreater(g.percent, 0)
         self.assertAlmostEqual(pygame.mixer.music.get_volume(),
                                upix.MUSIC_VOLUME, delta=1 / 128)
-        self.step(pygame.K_RIGHT, 3)
+        self.step(pygame.K_RIGHT, 3)  # Segue il nuovo confine, senza attraversare l'interno.
         self.assertFalse(g.draw_channel.get_busy())
         self.step(pygame.K_UP)
         self.assertTrue(g.draw_channel.get_busy())
@@ -114,7 +114,7 @@ class GameTests(unittest.TestCase):
         self.step(pygame.K_UP, 5)
         g.missiles.append({"x": 0})
         g.handle_death()
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertFalse(g.draw_channel.get_busy())
         self.assertFalse(g.drawing)
         self.assertEqual(g.current_trail, [])
@@ -134,7 +134,7 @@ class GameTests(unittest.TestCase):
         self.step(pygame.K_RIGHT, 3)
         self.step(pygame.K_DOWN, 2)
         self.step(pygame.K_LEFT, 3)
-        self.assertEqual(self.game.lives, 2)
+        self.assertEqual(self.game.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertFalse(self.game.drawing)
         self.assertFalse(self.game.draw_channel.get_busy())
 
@@ -145,7 +145,7 @@ class GameTests(unittest.TestCase):
         g.enemy_y = 540  # Il nuovo corpo 134x98 resta libero e interseca la scia.
         g.enemy_vx = g.enemy_vy = 0
         g.update()
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertFalse(g.draw_channel.get_busy())
 
     def test_missile_hitting_trail_causes_death(self):
@@ -155,7 +155,7 @@ class GameTests(unittest.TestCase):
                        "y": g.player_y * upix.CELL_SIZE,
                        "vx": 0, "vy": 0}]
         g.update()
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertFalse(g.draw_channel.get_busy())
 
     def test_safe_territory_absorbs_missiles(self):
@@ -166,7 +166,7 @@ class GameTests(unittest.TestCase):
         with mock.patch("pygame.key.get_pressed",
                         return_value=collections.defaultdict(bool)):
             g.update()
-        self.assertEqual(g.lives, 3)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'])
         self.assertEqual(g.missiles, [])
         self.assertFalse(g.draw_channel.get_busy())
 
@@ -179,7 +179,7 @@ class GameTests(unittest.TestCase):
         g.missiles = [{'x': 196, 'y': 100, 'vx': 30, 'vy': 0}]
         self.assertTrue(g._update_missiles())
         self.assertEqual(g.missiles, [])
-        self.assertEqual(g.lives, 3)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'])
         self.assertIsNone(g.physics_error)
 
     def test_runtime_high_speed_missile_hits_trail_only_once(self):
@@ -188,7 +188,7 @@ class GameTests(unittest.TestCase):
         g.drawing = True
         g.missiles = [{'x': 100, 'y': 100, 'vx': 100, 'vy': 0} for _ in range(2)]
         self.assertFalse(g._update_missiles())
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertEqual(g.missiles, [])
 
     def test_new_player_segment_over_missile_causes_one_death_immediately(self):
@@ -196,7 +196,7 @@ class GameTests(unittest.TestCase):
         g.missiles = [{'x': g.player_x * upix.CELL_SIZE,
                        'y': g.player_y * upix.CELL_SIZE - 3, 'vx': 0, 'vy': 0}]
         self.step(pygame.K_UP)
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertEqual(g.missiles, [])
         self.assertFalse(g.drawing)
 
@@ -309,7 +309,7 @@ class GameTests(unittest.TestCase):
             g.advance_frame(collections.defaultdict(bool))
             self.assertEqual(g.game_clock.ticks, 6)
             self.assertEqual(g.missiles, [])
-            self.assertEqual(g.lives, 3)
+            self.assertEqual(g.lives, upix.ENGINE['initial_lives'])
             self.assertEqual(g.state, GameState.PLAYING)
             self.assertLessEqual(g._boss_body().right, 200)
             snapshots.append((g.enemy_x, g.enemy_y, g.enemy_vx, g.enemy_vy))
@@ -391,7 +391,7 @@ class GameTests(unittest.TestCase):
         self.step(pygame.K_UP)
         g.next_level()
         self.assertEqual(g.level, 2)
-        self.assertEqual(g.current_music_idx, 1)
+        self.assertIn(g.music.current, g.music.shuffle.tracks)
         self.assertFalse(g.draw_channel.get_busy())
         g.level = g.max_levels
         g.next_level()
@@ -403,7 +403,7 @@ class GameTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             replacement = upix.Game(self.screen)
         self.assertFalse(replacement.draw_channel.get_busy())
-        self.assertEqual(replacement.lives, 3)
+        self.assertEqual(replacement.lives, upix.ENGINE['initial_lives'])
 
     def test_all_level_images_decode_and_render(self):
         g = self.game
@@ -472,7 +472,7 @@ class GameTests(unittest.TestCase):
         g.enemy_x, g.enemy_y = 400, 546
         before = [column[:] for column in g.grid]
         self.step(pygame.K_UP)
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertEqual(g.grid, before)
         self.assertFalse(g.draw_channel.get_busy())
 
@@ -485,7 +485,7 @@ class GameTests(unittest.TestCase):
         pixels = pygame.image.tobytes(g.canvas, "RGB")
         g.fill_area()
         self.finish_capture()
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertEqual(g.grid, before)
         self.assertEqual(pygame.image.tobytes(g.canvas, "RGB"), pixels)
 
@@ -575,13 +575,13 @@ class GameTests(unittest.TestCase):
         self.assertEqual(g.game_clock.ticks, 0)
 
     def test_level_profiles_select_assets_music_speed_and_equal_sprite_hitbox(self):
-        for level in range(1, 6):
+        for level in range(1, 13):
             g = self.game
             g.level = level
             with contextlib.redirect_stdout(io.StringIO()):
                 g.start_level()
             self.assertEqual(g.level_config.boss_sprite, f'boss{level}.png')
-            self.assertEqual(g._music_filename, g.level_config.music)
+            self.assertIn(g.music.current, g.music.shuffle.tracks)
             source = pygame.image.load(str(upix.ASSET_DIR / upix.MANIFEST['assets']['boss_dir'] /
                                            g.level_config.boss_sprite))
             width, height = g.boss_img.get_size()
@@ -711,7 +711,7 @@ class GameTests(unittest.TestCase):
         self.assertEqual(len(g.missiles), 1)
         self.assertFalse(g.fuse.active)
 
-    def test_player_sprite_is_doubled_centered_and_does_not_expand_missile_hitbox(self):
+    def test_player_sprite_is_centered_and_its_full_size_is_the_missile_hitbox(self):
         g = self.game
         source = pygame.image.load(str(upix.ASSET_DIR / upix.MANIFEST['assets']['player_sprite']))
         self.assertEqual(max(g.cursor_img.get_size()), max(upix.PLAYER_SPRITE_SIZE))
@@ -728,12 +728,15 @@ class GameTests(unittest.TestCase):
         self.assertEqual(pygame.image.tobytes(self.screen.subsurface(bounds), 'RGB'),
                          pygame.image.tobytes(expected, 'RGB'))
         g.drawing = True
-        g.missiles = [{'x': 310, 'y': 301, 'vx': 0, 'vy': 0}]
-        self.assertTrue(g._update_missiles())  # Dentro lo sprite, fuori dalla cella.
-        self.assertEqual(g.lives, 3)
-        g.missiles = [{'x': 301, 'y': 301, 'vx': 0, 'vy': 0}]
+        body = g._player_body()
+        self.assertEqual((body.width, body.height), g.cursor_img.get_size())
+        g.missiles = [{'x': body.right + upix.MISSILE_COLLISION_SIZE / 2 + 1,
+                       'y': 301, 'vx': 0, 'vy': 0}]
+        self.assertTrue(g._update_missiles())
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'])
+        g.missiles = [{'x': body.right - 1, 'y': 301, 'vx': 0, 'vy': 0}]
         self.assertFalse(g._update_missiles())
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
 
     def test_projectile_scale_updates_render_and_physical_body(self):
         body = self.game._missile_body({'x': 100, 'y': 100})
@@ -764,21 +767,21 @@ class GameTests(unittest.TestCase):
         distance = route.project(((g.player_x + .5) * 2, (g.player_y + .5) * 2))[1]
         g.perimeter_threat = PerimeterThreat(route, distance, speed_per_tick=2.5, body_size=(10, 10))
         g.update(collections.defaultdict(bool))
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertIsNone(g.perimeter_threat)
         self.assertFalse(g.fuse.active)
         g.update(collections.defaultdict(bool))
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
 
     def test_player_motion_into_threat_is_checked_in_same_tick(self):
         g = self.game
         route = g.perimeter_routes[0]
-        target = ((g.player_x + 1.5) * 2, (g.player_y + .5) * 2)
+        target = (g._player_body().right + 1, (g.player_y + .5) * 2)
         g.perimeter_threat = PerimeterThreat(route, route.project(target)[1],
                                             speed_per_tick=1, body_size=(1, 4))
         self.assertFalse(g._player_touches_perimeter_threat())
         self.step(pygame.K_RIGHT)
-        self.assertEqual(g.lives, 2)
+        self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertIsNone(g.perimeter_threat)
 
     def test_threat_freezes_on_pause_capture_and_terminal_states(self):
@@ -998,11 +1001,12 @@ class MainLoopTests(unittest.TestCase):
             [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_p)], [],
             [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_p)], [],
             [pygame.event.Event(pygame.WINDOWFOCUSLOST)], [],
-            [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_q)],
+            [pygame.event.Event(pygame.WINDOWFOCUSGAINED),
+             pygame.event.Event(pygame.KEYDOWN, key=pygame.K_q)],
         ])
 
-        def build_game(screen):
-            game = real_game(screen, time_source=lambda: now_ms, rng=random.Random(1989))
+        def build_game(screen, **kwargs):
+            game = real_game(screen, time_source=lambda: now_ms, rng=random.Random(1989), **kwargs)
             games.append(game)
             return game
 

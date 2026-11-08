@@ -27,7 +27,7 @@
             "name": {"type": "string", "minLength": 1, "maxLength": 16},
             "final_tick": {"type": "integer", "minimum": 0},
             "inputs": {"type": "array", "maxItems": 10000, "items": {"type": "object", "additionalProperties": false, "required": ["tick", "action"], "properties": {
-              "tick": {"type": "integer", "minimum": 0}, "action": {"type": "string", "enum": ["up", "down", "left", "right"]}
+              "tick": {"type": "integer", "minimum": 0}, "action": {"type": "string", "enum": ["up", "down", "left", "right", "shield", "continue_cycle", "finish_run"]}
             }}}
           }
         }}}},

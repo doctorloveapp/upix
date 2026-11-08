@@ -1,6 +1,6 @@
 # UPIX 1989 — Stato tecnico e piano di sviluppo
 
-Aggiornamento: **7 novembre 2026**. Ruolo operativo: Senior Game Engine Developer
+Aggiornamento: **8 novembre 2026**. Ruolo operativo: Senior Game Engine Developer
 e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 
 ## Regole vincolanti e stato attuale
@@ -13,6 +13,8 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   **Fase 4 implementata**: player 2×, Miccia separata e punteggio area/tempo.
   **Fase 5 implementata**: Run Score, riepilogo e finale della campagna.
   **Fase 6 desktop implementata**: menu iniziale e classifica personale persistente.
+  Implementati controller/deadzone, i18n IT/EN, dodici boss distinti, hitbox player
+  completa, movimento sulla frontiera, scudi, vite extra e cicli di difficoltà.
   Port browser e classifica pubblica sul backend sono progettati, non deployati.
   Il collaudo esteso da Release Candidate e gli altri interventi della roadmap
   restano aperti.
@@ -20,10 +22,9 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   Finestra **1024 × 768 px**, cornice `public/icon/Cornice_gioco.png` e campo
   **917 × 688 px** in `(52, 66)`, scala uniforme con arrotondamento raster.
   Rendering limitato a 60 FPS. Valori HUD nei pannelli originali della cornice.
-- Nuovi boss `boss1.png`–`boss5.png`: base nel box **96×70**, poi **scala 1,4**
-  richiesta dall'utente. Dimensioni effettive **134×98**, **134×92**, **134×98**,
-  **134×97**, **113×98** con i PNG attuali. `boss_size` governa insieme sprite e AABB identica.
-  Livelli 1–5 associati ai cinque asset; 6–12 riusano boss5 tramite manifest.
+- Ogni livello usa il proprio `boss1.png`–`boss12.png`: box base **96×70**,
+  **scala 1,4**, alpha e proporzioni preservate. `boss_size` governa insieme
+  sprite e AABB identica. Dimensioni correnti nella tabella della nuova consegna.
 - **Copertura SVG visibile all'avvio**, **immagine primaria PNG/JPG svelata
   dalla conquista**: ruoli separati per tutte le dodici coppie di asset.
   Entrambe usano scala uniforme e ritaglio centrato, senza deformare le immagini.
@@ -31,30 +32,502 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   all'inizio: da **2 px/tick ogni 2400 ms** a **5,3 px/tick ogni 750 ms**.
   Boss da 1,6 a 6 px/tick; conquista dal 70% all'86%. La curva sostituisce
   i precedenti 1900/1800/1700 ms e la velocità missile uniforme di 5 px/tick.
-- **Player proporzionato nel box 30×30**, centrato sulla cella logica; hitbox
-  di cella invariata. Il nuovo file attuale 1028×1191 viene reso a **26×30**.
+- **Player proporzionato nel box 30×30**, centrato sulla cella logica; AABB
+  **uguale allo sprite**. File attuale 1023×1183, reso e collidente a **26×30**.
+  L'ancora naviga soltanto sul confine sicuro o nelle celle libere; non può
+  attraversare l'interno conquistato. **5 vite**, vita extra con vittoria ≥74%,
+  **scudo per singola conquista ≥25% del campo**; Spazio/X per equipaggiarlo.
   **Proiettili al 130%**: AABB **5,2×5,2**, raggio nominale 3,9 arrotondato a 4 px.
   **Miccia** configurabile: preavviso e dimezzamento dell'intervallo spari dopo
-  permanenza prolungata in zona sicura, più una **scossa fisica sul confine**
-  a 150 px/s che fa perdere una vita al contatto; conquista/morte la disinnescano.
+  permanenza prolungata in zona sicura, più **una scossa nei livelli 1–4 e due
+  in versi opposti nei livelli 5–12**; velocità da 150 a 260 px/s nel ciclo 1.
+  Attivazione da 12 a 7,6 s. Conquista/morte le disinnescano; scudo assorbe un contatto.
   Scossa e missili usano `public/icon/miccia.png`, orientato nel verso del moto.
   **SCORE/BONUS/TEMPO** nell'HUD: base permanente e bonus di area che scade.
 - Musica normale **0,26**, musica durante il disegno **0,155**, effetto saldatrice
   **0,80**. L'ultima richiesta dimezza la riduzione precedente, da 0,21 a 0,105:
   la musica è quindi più udibile durante il disegno. Costante dedicata
   `DRAW_MUSIC_ATTENUATION = 0.105`; il volume attenuato è calcolato da quello normale.
-- **178 test superati**, compresi scossa, contorni frammentati, sprite orientati,
+- Menu con cambio lingua IT/EN immediato, overlay debug nascosto con avvio
+  personalizzato solo in memoria; premi vita/scudo mostrati insieme a fine livello.
+- Musica scoperta da `public/music` all'avvio, shuffle senza ripetizioni nel
+  giro e alla giunzione fra giri, con RNG separato dalla simulazione.
+- **233 test superati**, compresi contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
+  input/controller, i18n, frontiera, scudi,
+  vite extra, salvataggio oltre 12 livelli, scossa, contorni frammentati, sprite orientati,
   menu, campagna completa, classifica JSON/browser,
   manifest, nuove dimensioni, Miccia, punteggio, progressione dei dodici livelli,
-  player 2× con hitbox invariata, configurazioni, cattura a budget diversi,
+  AABB player completa, configurazioni, cattura a budget diversi,
   cancellazione/pausa, HUD esterno, loop, determinismo a FPS diversi e collisioni.
-  Verifica visiva dei tre sprite e della primaria rivelata dopo la conquista.
+  Verifica visiva IT/EN di menu, tutorial, gioco, premio scudo, riepilogo e finale.
   La diagnostica storica di 3.000 movimenti riguardava il vecchio corpo:
   non viene presentata come collaudo esteso del nuovo boss.
 - Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**,
   `resvg_py` **0.5.0**. Dipendenze dichiarate in `requirements.txt`.
 
-## Consegna corrente — Scossa sul perimetro e sprite energia (7 novembre 2026)
+## Consegna corrente — Audit vite e correzione respawn (8 novembre 2026)
+
+### Problema riprodotto e causa
+
+Segnalazione: campagna debug con 15 vite, Game Over percepito dopo circa dieci
+morti. L'audit ha seguito `StartSettings` → `CampaignApp` → `Game.lives`, tutte
+le sorgenti di danno, ricompense, cambio livello/ciclo, HUD e ingresso nella
+schermata di registrazione del punteggio.
+
+**Non è emerso un limite a dieci morti né una conversione da 15 a 5 vite.**
+Il difetto riprodotto è il consumo di più vite durante un unico input mantenuto:
+il boss tangente al bordo sicuro colpisce appena si tenta un nuovo taglio;
+`handle_death()` azzera il movimento ma `_update_player()` lo riattiva dal tasto
+ancora premuto. La morte non interrompeva neppure il recupero dell'accumulatore,
+perciò più respawn e collisioni potevano avvenire prima di un solo rendering.
+
+Riproduzione deterministica: 15 vite, boss fermo e geometricamente valido appena
+sopra il punto di rientro, SU mantenuto, frame da 100 ms. Risultati misurati:
+
+| Tempo reale | Tick nel frame prima | Vite prima | Tick nel frame dopo | Vite dopo |
+| --- | --- | --- | --- | --- |
+| 100 ms | 6 | 9 | 1 | 14 |
+| 200 ms | 6 | 3 | 6 | 14 |
+| 300 ms | 3, poi Game Over | 0 | 6 | 14 |
+
+Questa è una causa verificata di morti apparentemente mancanti; non è disponibile
+una registrazione della specifica partita segnalata, quindi non se ne attribuisce
+con certezza assoluta ogni evento a questo scenario.
+
+### Correzione effettivamente implementata
+
+- Ogni morte azzera `frame_clock`: il cambio di posizione interrompe i tick
+  arretrati del frame, come già accade per pausa e cambio stato. Non viene
+  azzerato il tempo del livello; viene scartato il credito reale precedente
+  al respawn, senza recuperarlo nel frame successivo.
+- `_respawn_waiting_for_release` richiede un input direzionale neutro dopo la
+  morte, quindi una nuova direzione per ripartire. Mantenere o cambiare direzione
+  senza rilascio non riapre un taglio. Il controllo usa `InputFrame`, oppure
+  l'adattatore tastiera esistente; sul controller il neutro segue la deadzone
+  dell'InputManager. Nessuna lettura hardware nel tick fisico.
+- Il requisito di rilascio riguarda soltanto il movimento del player: boss,
+  proiettili, tempo e Miccia continuano ad avanzare. La scossa può ancora
+  colpire un giocatore fermo sul bordo; il respawn non introduce invulnerabilità.
+- Avviso visibile IT/EN sul campo: rilasciare la direzione e premere di nuovo.
+  La pausa conserva il requisito; `start_level()` lo elimina per il nuovo quadro.
+- `_handle_hostile_contact()` ora rifiuta chiamate fuori da `PLAYING`, evitando
+  anche di consumare scudi in stati sospesi o terminali.
+- La diagnostica delle vite stampa anche l'ultimo decremento a zero.
+
+### Esito dell'audit del sistema vite
+
+1. **Avvio:** le vite debug sono applicate prima di caricare il livello, senza
+   limite nascosto al valore normale di cinque. Validazione iniziale 1–99;
+   questo limite appartiene al menu debug, non alle ricompense durante il run.
+2. **Danni:** unico decremento in `handle_death()`, una vita per chiamata valida.
+   Boss, missili, scossa, autointersezione e contatto rilevato alla cattura
+   confluiscono in quel percorso. I chiamanti interrompono subito il tick al
+   danno; missili e scosse vengono rimossi al respawn, scia e audio puliti.
+3. **Scudi:** inventario distinto dalle vite. Uno scudo equipaggiato assorbe il
+   contatto ostile e consuma una carica; la morte mantiene le cariche non usate.
+   L'autointersezione resta un errore strutturale non assorbibile.
+4. **Premi e continuità:** vittoria con conquista ≥74% assegna una vita una sola
+   volta per coppia ciclo/livello. Le vite residue proseguono nei livelli e cicli
+   successivi; nessun ripristino automatico a cinque a ogni livello.
+5. **HUD e finale:** `HudData.lives` legge il contatore autorevole, senza copie
+   del valore iniziale. Il pannello mostra **vite/scudi**: `5/0` significa cinque
+   vite, zero scudi. L'app apre l'inserimento nome quando il motore entra in
+   `GAME_OVER`, che il percorso di morte imposta soltanto a zero. Ulteriori
+   contatti dopo il finale non portano il contatore sotto zero.
+
+### Verifiche e stato della consegna
+
+Aggiunti **12 test**: undici in `tests/test_lives.py` e uno nel percorso completo
+del menu/campagna. I test di regressione sono stati eseguiti prima della modifica:
+tre fallivano per recupero multiplo, input mantenuto e adattatore tastiera;
+dopo la correzione superano il controllo.
+
+Verificati 15 → 5 dopo esattamente dieci collisioni reali distinte, Game Over
+soltanto alla quindicesima, contatore zero stabile dopo il finale, avvio dal
+vero overlay debug con 15 vite e ingresso nella registrazione soltanto alla
+quindicesima morte; inoltre decrementi da 99, premio al 74% senza duplicati,
+continuità al cambio livello, scudi separati, pausa, stati sospesi, riarmo
+tastiera/controller, pericolosità della scossa durante l'attesa e input
+mantenuto a 30/60/144 FPS. I test preesistenti coprono le singole sorgenti di
+danno, cattura, cicli, collisioni e determinismo della simulazione.
+
+Suite completa: **233 test superati in 115,355 s** con
+`.venv\Scripts\python.exe -m unittest discover -s tests -q`.
+Controllata visivamente la composizione
+1024×768 con avviso e HUD IT/EN usando i driver SDL dummy. Il collaudo fisico
+del controller e una sessione prolungata sul dispositivo reale restano da
+eseguire. Nessun comando Git eseguito. Le fasi già completate rimangono tali;
+questa consegna corregge una regressione del respawn, senza cambiare bilanciamento,
+hitbox o soglie.
+
+## Consegna precedente — Bilanciamento, debug, premi e shuffle (8 novembre 2026)
+
+### Vita extra al 74% e premi combinati
+
+`progression.extra_life_percent` passa da **76 a 74**. La verifica resta
+inclusiva e una sola volta per coppia ciclo/livello: 73,999% non basta, 74% sì.
+Tutorial e riepilogo formattano la soglia dal manifest, senza copie nel codice.
+Non sono state cambiate le soglie di vittoria dei dodici profili.
+
+Nuovo riferimento `assets.life_sprite = icon/vita.png`, caricato e proporzionato
+nel box dei premi, con alpha preservato. Dopo LEVEL_CLEAR viene congelata anche
+la presentazione dei premi: **vita.png sopra**, **scudo.png sotto**, entrambi
+centrati con label IT/EN se vita extra e scudo sono stati ottenuti nello stesso
+livello. È mostrato anche il caso di un solo premio. Per gli scudi si usa il
+totale guadagnato nel livello, anche se l'avviso durante il gioco è già scaduto
+o la carica è stata consumata: la label parla di scudi ottenuti, non disponibili.
+
+`level_rewards_pending` separa la conferma del pannello finale dal timer
+dell'avviso scudo durante il gioco. Invio/Spazio/A apre il riepilogo, una seconda
+conferma avanza. Rendering e conferma non assegnano premi: punti, vita e scudi
+rimangono quelli del commit e di `LevelResult`, senza accrediti duplicati.
+
+### Sequenza nascosta e overlay debug
+
+Dal **solo Menu Principale** premere:
+**SU, GIÙ, SINISTRA, DESTRA, SU, SU, SPAZIO**.
+La sequenza viene elaborata prima della normale navigazione. Tastiera e azioni
+controller sono normalizzate dall'InputManager; X, associato allo scudo, può
+sostituire lo Spazio finale. Un evento marcato come ripetizione non avanza il
+codice. Entrare in altre schermate, avviare una campagna o perdere il focus
+impedisce di completare una sequenza rimasta parziale fuori dal menu.
+
+Nuovo **debug_menu.py**:
+
+- `CheatSequence`: riconoscitore con tabella dei prefissi; un errore conserva
+  soltanto il suffisso che può essere l'inizio di una nuova sequenza. Non sono
+  accettate sequenze incomplete o con il tasto finale sbagliato.
+- `StartSettings`: dataclass immutabile e validata, usata per l'avvio del Game.
+  Livello 1–12, vite 1–99, scudi 0–99; massimi e sequenza nel manifest.
+- `DEBUG_MENU`: overlay con pannello opaco, menu sottostante oscurato e tre
+  campi. Su/Giù seleziona il campo; Sinistra/Destra cambia il valore con limiti;
+  Invio/A avvia immediatamente; Esc/B annulla e torna al menu.
+
+I parametri vengono applicati **prima del primo start_level()**, evitando di
+caricare il livello 1 per poi sostituirlo. Il run parte con ciclo 1 e score zero.
+I valori appartengono all'istanza di `CampaignApp`, non sono scritti sul manifest,
+nelle traduzioni o in un salvataggio di configurazione. L'avvio normale dal menu
+usa sempre livello 1, cinque vite e zero scudi, anche nella stessa sessione.
+`close()` elimina i valori debug; un nuovo processo riparte dalle impostazioni
+normali. Il normale salvataggio della classifica locale non è stato modificato.
+
+### Musica dinamica e shuffle senza ripetizioni
+
+Nuovo **music.py**, con responsabilità distinte:
+
+1. `MusicShuffle` enumera con **Path.iterdir()** la cartella configurata
+   `public/music` all'avvio dell'applicazione. Accetta file MP3 anche con estensione
+   maiuscola; ignora cartelle e altri formati. Nessun elenco di nomi o legame
+   livello/brano nel sorgente o nei profili del manifest.
+2. Il catalogo ordinato viene mescolato con un **Random indipendente** e consumato
+   tramite deque. Ogni brano compare una volta per giro. Solo a sacchetto vuoto
+   viene ricaricato l'intero catalogo; se il primo elemento coincide con l'ultimo
+   precedente, viene scambiato con un altro. La ripetizione immediata è quindi
+   evitata anche tra giri, salvo il caso inevitabile di un solo MP3.
+3. `MusicPlayer` gestisce l'unico stream SDL. Usa `play()` senza loop infinito;
+   alla fine naturale sceglie il prossimo brano. Il polling avviene nel **frame
+   loop**, mai nel tick fisico. Il cambio livello e il nuovo ciclo conservano
+   il brano corrente: non vengono troncati i brani per consumare la playlist.
+4. Il player è condiviso per tutta la sessione. Tornare al menu ferma lo stream,
+   conservando il sacchetto; la campagna successiva prende il brano seguente.
+   Chiudere il processo elimina anche la playlist in memoria. I file aggiunti
+   durante una partita vengono rilevati al successivo avvio dell'applicazione.
+5. In pausa non viene interpretato `get_busy() == False` come fine brano.
+   Ripresa e attenuazione durante il disegno restano quelle precedenti; quando
+   cambia traccia il volume viene risincronizzato nello stesso frame. Cartella
+   vuota/audio assente lasciano il gioco silenzioso; file illeggibili vengono
+   saltati, con tentativi limitati al catalogo, senza ciclo infinito se sono tutti
+   corrotti. Diagnostica nel log, nessuna eccezione audio blocca la simulazione.
+
+Rimosse le associazioni `LevelConfig.music`, i nomi per livello e `MUSIC_TRACKS`.
+Restano configurabili cartella, estensione MP3, volume e attenuazione. La scansione
+non viene ripetuta nel frame loop; la decodifica/caricamento avviene soltanto
+al cambio effettivo del brano. Non è una riproduzione gapless/crossfade.
+Riferimento primario: [pygame.mixer.music](https://www.pygame.org/docs/ref/music.html),
+in particolare il comportamento di get_busy() durante la pausa.
+
+### Cambio lingua immediato
+
+Il Menu Principale ha ora **Lingua: IT → EN / Language: EN → IT**.
+`Localizer.set_language()` e `toggle()` cambiano il catalogo attivo in memoria,
+senza rileggere i JSON o ricreare il Game. Le schermate, i suggerimenti e i
+premi usano lo stesso oggetto I18N condiviso e cambiano immediatamente.
+
+L'HUD rileva il cambio anche se HudData è identico: ricompone label della
+cornice e footer dalla copia neutra già in memoria, invalidando la cache del
+testo. Nessuna rilettura del PNG, modifica all'apertura del campo o perdita
+dello stato di gioco. Non viene salvata una preferenza linguistica: al prossimo
+processo valgono nuovamente lingua di sistema, variabile ambiente o manifest.
+
+### Verifiche della consegna
+
+**221 test superati** con `.venv\Scripts\python.exe -m unittest discover -s tests -q`
+in **56,256 s**. Baseline 207 più **14 nuove regressioni**: sequenza/impostazioni
+(3), musica (6), integrazione menu/debug/premi/lingua (4), cache HUD a caldo (1).
+Dopo la rifinitura grafica del pannello debug sono stati ripetuti con successo
+i **13 test di campagna/menu**.
+
+Copertura nuova: riconoscimento esatto, errore e prefissi sovrapposti, sequenza
+solo nel menu e reset con focus perso; avvio livello 12 con 7 vite/3 scudi;
+successivo avvio normale e chiusura senza modificare i byte del manifest;
+scoperta di un MP3 aggiunto, estensioni miste, catalogo vuoto/singolo/doppio;
+20 giri per ciascuno di dieci semi senza duplicati o ripetizioni alla giunzione;
+nessun consumo del RNG globale; pausa e fine naturale tramite mixer simulato;
+uscita limitata con catalogo interamente corrotto; entrambi gli sprite dei premi
+visibili nell'ordine corretto, senza mutazioni del punteggio; cambio lingua con
+HudData invariato e caricamento immagini vietato durante il cambio.
+
+Verificati visivamente menu IT/EN, overlay debug e premi combinati con gli asset
+reali tramite SDL dummy. Restano superate regressioni fisiche, AABB, pause,
+scudi, catture, JSON e determinismo 30/60/144 FPS. L'ascolto reale e il comportamento
+del caricamento MP3 su dispositivi lenti richiedono collaudo sul dispositivo;
+non è stato pubblicato nulla sul sito. Nessuna operazione Git.
+
+## Storico — Gameplay avanzato, controller e i18n (8 novembre 2026)
+
+Questa sezione conserva la consegna precedente. La soglia 76%, l'assenza del
+cambio lingua a caldo e le associazioni musicali di livello sono superate
+dalla consegna corrente.
+
+### InputManager e controller
+
+Nuovo **input_manager.py** con `InputManager` e `InputFrame` immutabile.
+`CampaignApp` normalizza tastiera, assi analogici, D-pad e pulsanti in azioni
+logiche; acquisisce una direzione per frame e la passa invariata ai tick di
+recupero. La simulazione non legge dispositivi fisici: input assente significa
+frame neutro. Rimane un adattatore per i dizionari di tasti usati dai test storici.
+
+Deadzone di ingresso **0,25**, rilascio **0,18**: l'isteresi mantiene solo la
+direzione già attiva, un cambio di asse/verso deve superare nuovamente 0,25.
+L'asse dominante produce movimento ortogonale; nessuna diagonale. Lo stick
+neutro non avvia né cambia direzione. Come la tastiera, rilasciare il comando
+conserva il movimento arcade continuo già esistente.
+
+`pygame.joystick` gestisce connessioni/rimozioni tramite **instance ID**, non
+tramite l'indice instabile del dispositivo. La disconnessione azzera la direzione
+del player; il focus perso sospende il gioco e filtra gli input. Nel menu stick
+e D-pad generano una selezione per cambio di direzione, senza ripetizioni da drift.
+Tastiera ha priorità su joystick; più dispositivi sono ordinati per instance ID.
+
+`controller` nel manifest configura assi e pulsanti. Default: assi 0/1,
+**A/0 conferma**, **B/1 indietro**, **X/2 scudo**, **Start/7 pausa**. Le sigle
+sono quelle di un layout comune: altri pad possono richiedere la rimappatura.
+L'inserimento del nome continua a usare la tastiera; non è stata introdotta
+una tastiera virtuale per gamepad. Riferimenti API verificati:
+[pygame.joystick](https://www.pygame.org/docs/ref/joystick.html),
+[pygame.event](https://www.pygame.org/docs/ref/event.html).
+
+### Hitbox effettive dei dodici boss e del player
+
+Il manifest associa ora **tutti i dodici asset** ai rispettivi livelli, senza
+riusare boss5 nei livelli avanzati. Stessa pipeline `load_sprite()` e stesso
+parametro dimensionale per immagine e AABB; nessuna dimensione fisica separata
+da sincronizzare manualmente. La hitbox comprende anche i pixel trasparenti
+del rettangolo dello sprite, come richiesto per una AABB, non una maschera alpha.
+
+| Entità | PNG attuale | Sprite e AABB logici |
+| --- | --- | --- |
+| Player | 1023×1183 | 26×30 |
+| Boss 1 | 1470×1070 | 134×98 |
+| Boss 2 | 1511×1041 | 134×92 |
+| Boss 3 | 1470×1070 | 134×98 |
+| Boss 4 | 1484×1060 | 134×97 |
+| Boss 5 | 1345×1169 | 113×98 |
+| Boss 6 | 1498×1050 | 134×94 |
+| Boss 7 | 1484×1060 | 134×97 |
+| Boss 8 | 1448×1086 | 130×98 |
+| Boss 9 | 1469×1071 | 134×98 |
+| Boss 10 | 1484×1060 | 134×97 |
+| Boss 11 | 1484×1060 | 134×97 |
+| Boss 12 | 1484×1060 | 134×97 |
+
+`Game._player_body()` è l'unica AABB del player: sostituisce cella 2×2 e vecchio
+margine nei contatti con boss, missili e micce. Restano le regole di protezione
+del territorio sicuro da boss/missili; durante il taglio è vulnerabile l'intero
+sprite. La proiezione grafica 800×600→viewport non modifica la geometria logica.
+Gli asset originali non sono stati alterati.
+
+### Movimento vincolato al confine
+
+Il solver **collisions.move_player()** condivide il budget di substep del core,
+enumera tutte le celle attraversate e blocca il primo ingresso nell'interno
+conquistato. `player_cell_allowed()` consente celle libere oppure celle sicure
+adiacenti al campo libero negli **otto vicini**. Il vicinato diagonale permette
+di girare attorno agli angoli senza entrare nel campo; il movimento resta
+strettamente ortogonale. Una cornice profonda non diventa una strada alternativa
+lontana dal campo: serve sempre l'adiacenza al territorio libero.
+
+La topologia riguarda l'**ancora** del player; l'AABB grafica completa determina
+i contatti con le entità. Obbligare l'intero sprite 26×30 a stare in un bordo
+di poche celle renderebbe impossibile navigarlo. Il renderer può ritagliare
+lo sprite ai margini del canvas, come prima; dimensioni fisiche e grafiche
+logiche rimangono uguali.
+
+`swept_contact()` verifica l'intero tragitto AABB del player verso boss, missili
+e scosse, evitando il solo controllo sulla destinazione. La costruzione della
+scia segue le celle nell'ordine del solver; una chiusura interrompe il movimento
+prima di attraversare ulteriori celle. Se la cattura ingloba il punto di rientro,
+la transazione cerca all'indietro sulla linea appena terminata il primo punto
+del nuovo confine e vi fissa player/respawn nello stesso commit. Nessuna ricerca
+BFS aggiuntiva o correzione applicata durante un tick fisico.
+
+### Vite extra, scudi e HUD
+
+**5 vite iniziali**. Alla vittoria, se la percentuale totale del livello è
+**≥76%**, viene assegnata **una vita extra**. `LevelResult` registra il premio,
+il ciclo e gli scudi guadagnati; il riepilogo annuncia +1 e le vite già aggiornate.
+L'accredito usa la chiave `(ciclo, livello)`: ripetere la transizione non duplica
+né punti né vite. Nei primi livelli, la cui soglia di vittoria è inferiore a 76%,
+serve oltrepassare 76% con il taglio conclusivo per guadagnare la vita.
+
+Nuovo **shields.py**: inventario a cariche intere. Una singola transazione deve
+conquistare **almeno il 25% delle 120.000 celle del campo**, includendo la nuova
+linea, per dare uno scudo. Tagli piccoli successivi non si sommano per il premio.
+La carica arriva solo dopo il commit riuscito, mai durante una cattura cancellata.
+
+**Spazio / X** equipaggia una carica disponibile; il cerchio rosa circoscrive
+lo sprite. La carica resta conteggiata nell'inventario fino al primo contatto
+ostile, poi si consuma. Boss, missili e micce passano da un gestore comune del
+contatto. **500 ms di grazia** impediscono che lo stesso urto o due micce
+sovrapposte causino immediatamente anche la perdita di una vita. Durante la
+grazia resta visibile l'anello di protezione residua.
+
+Un contatto protetto annulla l'eventuale taglio e riporta il player all'ultimo
+punto sicuro senza conquistare territorio. È necessario per non lasciare una
+scia intersecante il boss in attesa di un commit impossibile. L'autointersezione,
+che invalida la linea, resta una morte non assorbibile. Vite perse non cancellano
+le cariche ancora disponibili; al nuovo livello lo scudo viene riposto e la
+grazia azzerata, conservando l'inventario.
+
+`public/icon/scudo.png` e label tradotta compaiono al centro per **1,8 s simulati**
+durante il gioco. Se il premio coincide con la vittoria, compare prima del
+riepilogo: Invio/A lo chiude, una seconda conferma prosegue al livello successivo.
+Il pannello superiore mostra **VITE/SCUDI**, per esempio **5/2**, e il footer
+riporta anche scudi, punti, bonus, tempo e ciclo. Immagine cornice preservata.
+
+### Due micce e progressione
+
+| Livello del ciclo 1 | Micce | Velocità | Attivazione |
+| --- | ---: | ---: | ---: |
+| 1 | 1 | 150 px/s | 12 s |
+| 4 | 1 | 180 px/s | 10,8 s |
+| 5 | 2 | 190 px/s | 10,4 s |
+| 12 | 2 | 260 px/s | 7,6 s |
+
+Le due entità partono dal punto opposto al player sul medesimo contorno e si
+separano in versi **fissi +1/-1**, mantenendoli durante tutto il giro. Una miccia
+singola continua a inseguire per il percorso più breve. `perimeter_threats` è
+la sorgente unica delle entità; `perimeter_threat` rimane una vista compatibile
+del primo elemento per strumenti/test esistenti. Restano contorni compressi,
+urti continui ai corner, pausa/cattura congelate e reset dopo conquista/morte.
+
+Profili `LevelConfig`: `perimeter_threat_count` e `perimeter_speed_px_per_second`.
+Il vecchio parametro globale di velocità è sostituito da
+`perimeter_threat.speed_multiplier=1.0`, moltiplicatore esplicito dei profili.
+Le soglie della Miccia sono già distinte nei dodici record del manifest.
+
+### Internazionalizzazione e tutorial
+
+Nuovi **localization.py**, **locales/it.json**, **locales/en.json**. Testi di
+menu, HUD, riepiloghi, notifiche, tutorial, dodici suggerimenti e messaggi UI
+sono nei cataloghi; il manifest conserva chiavi e configurazione. All'avvio
+sono verificati uguaglianza delle chiavi e segnaposto di formattazione.
+Errori tecnici interni e identificatori degli algoritmi restano nel log/codice;
+la schermata PHYSICS_ERROR mostra un messaggio tradotto, non l'eccezione grezza.
+
+Selezione: `UPIX_LANGUAGE`, poi locale esplicito dell'ambiente, poi lingua UI
+Windows o locale di sistema. Italiano/Inglese supportati, **inglese come fallback**.
+`i18n.language` può forzare `it`/`en` oppure usare `auto`; richiede riavvio.
+Le label italiane stampate nella cornice PNG vengono coperte e ridisegnate
+nei rettangoli `frame.labels`, senza cambiare l'asset.
+
+Il menu aggiunge **Come si gioca / How to Play**, navigabile anche con controller.
+Spiega confini, movimento continuo, cattura, cinque vite, premio al 76%, scudo al
+25%, comandi e cicli. Le soglie nel tutorial vengono formattate dal manifest,
+così non divergono modificando il bilanciamento.
+
+### Cosa accade dopo il livello 12?
+
+1. Il riepilogo consolida una sola volta risultato, bonus residuo, eventuale
+   vita extra e dati del dodicesimo livello. Segue la schermata di campagna
+   completata con **Continua: ciclo N+1** (default) o **Registra e termina**.
+2. Continuando si torna al livello 1 con nuovo numero di ciclo. **Run Score,
+   tempo totale consolidato, vite e cariche scudo restano acquisiti**. I risultati
+   sono indicizzati per coppia `(ciclo, livello)`, senza sovrascrivere il ciclo
+   precedente. Totali e conteggio sono mantenuti incrementalmente in O(1).
+3. Si ricreano campo, immagini, boss e velocità iniziale del profilo. **Timer del
+   livello, scia, missili, micce, conteggio Miccia, bonus/punti correnti, timer AI,
+   equipaggiamento e grazia ripartono da zero**. Si riprende la musica del livello 1.
+   Il generatore RNG mantiene la sequenza del run, senza un nuovo seme dal tempo reale.
+4. Si applica il modificatore del ciclo ai profili base, senza alterare griglia o
+   hitbox: **+15% velocità per ciclo, massimo 200%** per boss, missili e micce;
+   intervalli spari e attivazione Miccia **−10 punti percentuali per ciclo,
+   minimo 40%** del profilo; pavimenti di **300 ms** per gli spari e **3000 ms**
+   per l'attivazione. Conquista richiesta **+2 punti per ciclo, massimo 90%**.
+   Il livello 1 del ciclo 2 ha quindi boss **1,84 px/tick**, miccia **172,5 px/s**,
+   attivazione **10,8 s** e soglia vittoria **72%**. Il ciclo ricalcola dal profilo
+   base: non moltiplica ripetutamente i valori già scalati.
+5. La curva interna 1–12 ricomincia: il primo livello del nuovo ciclo può essere
+   più lento del dodicesimo appena concluso, ma è più difficile dello stesso
+   livello nel ciclo precedente. I limiti evitano crescita illimitata della
+   velocità/costo del solver. Restano una miccia nei livelli 1–4 e due dal 5.
+6. **Registra e termina** apre l'inserimento nome e salva il Run Score totale nel
+   JSON locale. Anche un Game Over nei cicli successivi salva tutti i livelli
+   completati, per esempio 13 dopo il primo livello del ciclo 2; `completed`
+   indica che almeno una campagna è stata conclusa. La persistenza della partita
+   in corso resta in memoria: non è stato aggiunto un ripristino dopo chiusura.
+7. **Inizia Campagna** dal menu crea un nuovo Game: ciclo 1, cinque vite, zero
+   punti e zero scudi. I risultati già salvati nella classifica rimangono sul file.
+
+I moltiplicatori e i limiti sono in `progression.loop`. La classifica conserva
+compatibilità con i record precedenti, ma regole diverse non costituiscono una
+graduatoria competitiva confrontabile: la futura API dovrà versionare il ruleset.
+Il contratto Web proposto include anche input scudo e scelta del ciclo; nessun
+backend, replay recorder o build browser è stato implementato in questo task.
+
+### Verifiche, prestazioni e limiti della consegna
+
+**207 test superati** in **55,480 s** con
+`.venv\Scripts\python.exe -m unittest discover -s tests -q`.
+Baseline 178 e **29 nuove regressioni**: input (5), i18n (3),
+movimento player (6), inventario scudi (3), integrazione avanzata (9),
+campagna/salvataggio nei cicli (2), HUD scudi (1). Le regressioni esistenti sono
+aggiornate alle cinque vite e alla AABB completa, mantenendo muro 200–201 px,
+solver boss/missili, pausa/audio, cattura e determinismo.
+
+Verifiche nuove significative: soglie inclusive 76% e 25%, nessun premio doppio,
+un grande taglio reale con premio solo al commit, ancoraggio sul nuovo confine,
+urto assorbito senza modificare la griglia, due versi opposti, tracciamento di
+tutte le celle anche ad alta velocità, svolta sicura attorno agli angoli,
+assenza di letture hardware dal tick, deadzone/hotplug tramite dispositivi
+simulati, conteggio e salvataggio reale JSON di 13 risultati. Una simulazione
+di nove secondi con due micce e consumo dello scudo coincide a **30/60/144 FPS**.
+
+Verifica visiva SDL dummy IT/EN: menu, tutorial, pannelli cornice, partita con
+due micce e anello, icona/premio scudo, riepilogo con vita extra e scelta del ciclo.
+I test/screenshot usano file temporanei e non creano risultati fittizi nel
+salvataggio personale. Controller fisico, audio reale e playtest prolungato
+restano da collaudare sul dispositivo dell'utente.
+
+Benchmark cattura isolato, con rendering, viewport e HUD, senza overlay del
+controller schermate: taglio x=400 px **17 frame**, massimo CPU **6,638 ms**;
+taglio x=160 px **16 frame**, massimo **6,568 ms**. Lavoro di cattura massimo
+**4,115 ms**, coerente con budget 4 ms controllato tra quanti. Caso stretto del
+tool aggiornato da 120 a 160 px per contenere interamente il boss attuale.
+
+Profilo CPU livello 12, seme 1989, 20 tick di riscaldamento e 240 campioni,
+tick + Game.draw + viewport + HUD, due micce attive. Player fermo con grazia
+artificiale nella sola diagnostica, per impedire che una morte interrompa il
+profilo. Ciclo 1: mediana **5,550 ms**, P95 **7,289 ms**, massimo **10,378 ms**.
+Ciclo 8, già al tetto 200% velocità: **8,725 / 10,290 / 13,649 ms**.
+Sono scenari controllati SDL dummy, non una garanzia universale di 60 FPS su
+monitor/hardware reale o con contorni/scie estremi. Nessuna operazione Git.
+
+## Storico — Scossa sul perimetro e sprite energia (7 novembre 2026)
+
+La sezione seguente descrive la prima miccia fisica; hitbox player, quantità,
+progressione, localizzazione e flusso dopo il livello 12 sono stati aggiornati
+dalla consegna dell'8 novembre.
 
 ### Comportamento implementato
 
@@ -452,7 +925,8 @@ di questi è presentato come codice già consegnato.
 ## Storico — Spari ripristinati, cornice e immagini proporzionate
 
 Le sezioni delle consegne precedenti conservano i parametri di quel momento;
-per il comportamento corrente fanno fede la consegna Fase 4 qui sopra e il codice.
+per il comportamento corrente fanno fede la consegna dell'8 novembre in apertura,
+il manifest e il codice.
 
 ### Ripristino delle pallottole
 
@@ -1221,7 +1695,7 @@ Prima della migrazione:
 
 ## Verifiche e limiti residui
 
-Suite corrente: **178 test superati** con:
+Suite corrente: **233 test superati** con:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -1275,13 +1749,18 @@ Progressione delle consegne:
 | Fase 4 / preparazione Fase 5 | Player 2×, Miccia modulare, score/bonus area-tempo, curva di 12 livelli e missili progressivi, 140 test |
 | Fasi 5/6 desktop | Run Score, riepilogo/finale, menu, classifica atomica, manifest JSON e nuove dimensioni, 157 test; Web progettato separatamente |
 | Miccia / sprite energia | PerimeterThreat sui contorni aggiornati, collisione continua, sprite miccia condiviso e orientato, 178 test |
+| Gameplay / i18n / controller | Dodici boss, AABB player completa, frontiera, 5 vite/premi/scudi, doppie micce, cicli, cataloghi IT/EN e joystick; 207 test |
+| Debug / audio / premi | Vita extra al 74%, avvio debug solo in memoria, premi combinati, MP3 dinamici/shuffle e lingua a caldo; 221 test |
+| Audit vite / respawn | Riprodotte morti multiple da input mantenuto; interruzione del recupero alla morte e rilascio richiesto per ripartire, 15/99 vite e percorso menu/finale verificati; 233 test |
 
 Il gioco comprende una prima vertical slice di 3 livelli su una campagna
-giocabile di 12, con 3 vite, obiettivo dal 70% all'86%, movimento ortogonale continuo e
+giocabile di 12, con 5 vite iniziali, vita extra al 74%, scudi per tagli ≥25%,
+obiettivo dal 70% all'86% nel ciclo 1, movimento ortogonale continuo sul confine e
 morte per autointersezione. Gli spari sono presenti fin dal primo livello,
 sempre più veloci e frequenti con la progressione. Il Run Score persiste tra
 livelli, con riepiloghi e bonus consolidati alla vittoria. Dopo il dodicesimo
-livello appare il finale, seguito dall'inserimento nome. Menu navigabile e
+livello appare la scelta tra nuovo ciclo più difficile e registrazione del risultato.
+Menu navigabile da tastiera/controller, tutorial IT/EN e
 classifica personale JSON sono implementati. Restano aperti il port browser,
 la classifica pubblica verificata sul backend, packaging, impostazioni e
 collaudo esteso del bilanciamento e dei comportamenti dei boss.
@@ -1300,9 +1779,9 @@ collaudo esteso del bilanciamento e dei comportamenti dei boss.
 | Consolidamento restante | Playtest e profilazione di scie/geometrie avverse |
 | Fluidità e controllo | HUD score/bonus/tempo implementato; restano impostazioni dei volumi e collaudo sul dispositivo reale |
 | Vertical slice | Tre profili/boss implementati; spari diretti in tutti i livelli e inseguimento nel terzo; bilanciamento da collaudare |
-| Fase 4 — Varietà e bilanciamento | Implementati player 2×, Miccia con scossa sul confine, sprite energia condiviso e bonus area/tempo; playtest e potenziamenti restano da valutare |
-| Fase 5 — Campagna | Implementati manifest JSON, Run Score, riepiloghi e finale; nuovi archetipi ulteriori da progettare |
-| Fase 6 — Desktop | Implementati menu e classifica personale; pacchetto Windows e playtest release ancora da completare |
+| Fase 4 — Varietà e bilanciamento | Implementati AABB player completa, scudi, vita extra, doppie micce e dodici asset; resta il playtest |
+| Fase 5 — Campagna | Manifest, Run Score per ciclo/livello, riepiloghi e scelta dei cicli con limiti espliciti implementati |
+| Fase 6 — Desktop | Menu/tutorial IT/EN, input controller e classifica personale implementati; pacchetto e collaudo hardware ancora aperti |
 | Release Web | Piano React/Vite/Vercel e contratto API/SQL pronti; build browser, backend e replay autorevole non deployati |
 
 ## Riferimenti arcade e direzione di design

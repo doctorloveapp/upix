@@ -164,6 +164,62 @@ class MotionResult:
     substeps: int = 0
 
 
+def player_cell_allowed(grid: CollisionGrid, x: int, y: int) -> bool:
+    """Ancora del player: campo libero o frontiera sicura a 8 vicini.
+
+    La topologia riguarda il centro del player; la sua AABB completa rimane
+    indipendente e viene usata per tutti i contatti con entità ostili.
+    """
+    cols, rows = len(grid.cells), len(grid.cells[0])
+    if not (0 <= x < cols and 0 <= y < rows):
+        return False
+    if grid.cells[x][y] != grid.solid_value:
+        return True
+    return any(grid.cells[nx][ny] != grid.solid_value
+               for nx in range(max(0, x - 1), min(cols, x + 2))
+               for ny in range(max(0, y - 1), min(rows, y + 2)))
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerMotion:
+    body: AABB
+    cells: tuple[tuple[int, int], ...]
+    blocked: bool
+    substeps: int
+
+
+def move_player(grid: CollisionGrid, cell: tuple[int, int], size, dx: int, dy: int) -> PlayerMotion:
+    """Percorso ortogonale completo: nessun salto oltre l'interno conquistato.
+
+    Condivide la validazione del budget del solver. Restituisce tutte le celle
+    accettate, affinché il chiamante gestisca scia/cattura nell'ordine esatto.
+    I contatti fra AABB lungo ogni segmento sono verificabili con swept_contact.
+    """
+    if type(dx) is not int or type(dy) is not int or (dx and dy):
+        raise ValueError('Il player richiede uno spostamento ortogonale intero')
+    x, y = cell
+    if not player_cell_allowed(grid, x, y):
+        raise PhysicsStateError('Ancora player fuori dal confine navigabile')
+    body = AABB.from_center((x + .5) * grid.cell_size, (y + .5) * grid.cell_size, *size)
+    count = _substep_count(grid, body, dx * grid.cell_size, dy * grid.cell_size)
+    sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
+    path = []
+    for _ in range(abs(dx) + abs(dy)):
+        nx, ny = x + sx, y + sy
+        if not player_cell_allowed(grid, nx, ny):
+            return PlayerMotion(body, tuple(path), True, count)
+        x, y = nx, ny
+        path.append((x, y))
+        body = AABB.from_center((x + .5) * grid.cell_size, (y + .5) * grid.cell_size, *size)
+    return PlayerMotion(body, tuple(path), False, count)
+
+
+def swept_contact(body: AABB, obstacle: AABB, dx: float, dy: float) -> bool:
+    """Test continuo condiviso per il player in moto verso entità statiche."""
+    _require_finite(dx, dy)
+    return body.overlaps(obstacle) or _sweep_fraction(body, obstacle, dx, dy) is not None
+
+
 @dataclass(frozen=True, slots=True)
 class _Contact:
     distance: float

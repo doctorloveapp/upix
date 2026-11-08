@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import pygame
 from manifest import MANIFEST, ROOT
+from localization import I18N, tr
 
 FRAME_PATH = ROOT / MANIFEST['assets']['root'] / MANIFEST['assets']['frame']
 FRAME_DESIGN_SIZE = MANIFEST['frame']['design_size']
@@ -23,6 +24,8 @@ class HudData:
     seconds: int
     hint: str
     bonus: int = 0
+    shields: int = 0
+    cycle: int = 1
 
 
 class Hud:
@@ -52,12 +55,13 @@ class Hud:
         except (pygame.error, OSError) as exc:
             print(f'Cornice non disponibile ({frame_path}): {exc}')
             # Fallback funzionale con la stessa geometria, senza coprire il campo.
-            for label, bounds in zip(MANIFEST['ui']['strings']['fallback_labels'],
-                                     self.value_bounds.values()):
+            for bounds in self.value_bounds.values():
                 panel = bounds.move(-90, 0).inflate(100, 10)
                 pygame.draw.rect(self._frame, (20, 23, 30), panel)
-                font = pygame.font.SysFont(MANIFEST['assets']['font'], MANIFEST['ui']['font_size'], bold=True)
-                self._frame.blit(font.render(label, True, (240, 240, 245)), panel.topleft)
+        self._base_frame = self._frame.copy()
+        self._label_bounds = {key: project(rect) for key, rect in MANIFEST['frame']['labels'].items()}
+        self._label_font = pygame.font.SysFont(MANIFEST['assets']['font'], max(10, round(30 * scale)), bold=True)
+        self._refresh_labels()
         self._surface = self._frame.copy()
         style = MANIFEST['ui']
         self._font = pygame.font.SysFont(MANIFEST['assets']['font'],
@@ -66,13 +70,30 @@ class Hud:
             max(style['hud_footer_min_size'], round(style['hud_footer_font_size'] * scale)), bold=True)
         self._last_data = None
 
+    def _refresh_labels(self):
+        # Il PNG contiene label italiane: maschera soltanto i rettangoli del
+        # testo, preservando logo, pannelli, valori e apertura del campo.
+        self._frame = self._base_frame.copy()
+        for key, rect in self._label_bounds.items():
+            pygame.draw.rect(self._frame, (10, 12, 18), rect)
+            label = self._label_font.render(tr({'level': 'header_level', 'percent': 'header_capture',
+                                         'lives': 'header_lives'}[key]), True, MANIFEST['colors']['text'])
+            if label.get_width() > rect.width:
+                ratio = rect.width / label.get_width()
+                label = pygame.transform.smoothscale(label, (rect.width, max(1, round(label.get_height() * ratio))))
+            self._frame.blit(label, label.get_rect(center=rect.center))
+        self._language = I18N.language
+
     def draw(self, window: pygame.Surface, data: HudData) -> None:
+        if self._language != I18N.language:
+            self._refresh_labels()
+            self._last_data = None
         if data != self._last_data:
             self._surface.fill((0, 0, 0, 0))
             self._surface.blit(self._frame, (0, 0))
             values = {'level': f'{data.level:02d}' if data.level else '--',
                       'percent': f'{data.percent:.1f}%' if data.level else '--',
-                      'lives': str(data.lives) if data.level else '--'}
+                      'lives': tr('hud_lives_shields', lives=data.lives, shields=data.shields) if data.level else '--'}
             for key, value in values.items():
                 bounds = self.value_bounds[key]
                 text = self._font.render(value, True, MANIFEST['colors']['accent'])
@@ -80,8 +101,8 @@ class Hud:
                     text = pygame.transform.smoothscale(
                         text, (bounds.width, round(text.get_height() * bounds.width / text.get_width())))
                 self._surface.blit(text, text.get_rect(center=bounds.center))
-            label = MANIFEST['ui']['strings']['hud_footer'].format(score=data.score,
-                bonus=data.bonus, minutes=data.seconds // 60, seconds=data.seconds % 60)
+            label = tr('hud_footer', score=data.score, shields=data.shields, cycle=data.cycle,
+                       bonus=data.bonus, minutes=data.seconds // 60, seconds=data.seconds % 60)
             pygame.draw.rect(self._surface, (10, 12, 18), self.footer_bounds)
             text = self._footer_font.render(label, True, (245, 245, 250))
             ratio = min(1, self.footer_bounds.width / text.get_width(),

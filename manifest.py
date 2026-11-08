@@ -56,12 +56,43 @@ def load_manifest(path=MANIFEST_PATH):
             raise ValueError('Bordo troppo spesso')
         if engine['empty_cell'] == engine['filled_cell']:
             raise ValueError('Stati delle celle indistinguibili')
-        for key in ('root', 'player_sprite', 'frame', 'energy_sprite'):
+        for key in ('root', 'player_sprite', 'frame', 'energy_sprite', 'shield_sprite',
+                    'life_sprite', 'music_dir', 'boss_dir'):
             _relative(data['assets'][key])
+        _relative(data['i18n']['directory'])
+        if data['i18n']['language'] not in ('auto', 'it', 'en') or data['i18n']['fallback'] not in ('it', 'en'):
+            raise ValueError('Lingua non supportata')
+        controller = data['controller']
+        if not (0 <= controller['release_deadzone'] < controller['deadzone'] < 1):
+            raise ValueError('Deadzone controller non valida')
+        if (len(controller['axes']) != 2 or len(set(controller['axes'])) != 2
+                or any(type(v) is not int or v < 0 for v in controller['axes'])
+                or any(type(v) is not int or v < 0 for v in controller['buttons'].values())):
+            raise ValueError('Mappa controller non valida')
+        shield = data['shields']
+        if not 0 < shield['capture_percent'] <= 100:
+            raise ValueError('Soglia scudo non valida')
+        for key in ('notice_ms', 'contact_grace_ms', 'ring_width', 'ring_padding'):
+            _positive(shield[key], key)
+        if len(shield['notice_sprite_size']) != 2:
+            raise ValueError('Dimensioni avviso scudo non valide')
+        for value in shield['notice_sprite_size']:
+            _positive(value, 'notice_sprite_size')
+        if (len(shield['ring_color']) != 3 or any(type(v) is not int or not 0 <= v <= 255
+                                                for v in shield['ring_color'])):
+            raise ValueError('Colore scudo non valido')
+        if not 0 < data['progression']['extra_life_percent'] <= 100:
+            raise ValueError('Soglia vita extra non valida')
+        loop = data['progression']['loop']
+        for key, value in loop.items():
+            _positive(value, key)
+        if (loop['max_speed_percent'] < 100 or loop['min_interval_percent'] > 100
+                or not 0 < loop['max_victory_percent'] <= 100):
+            raise ValueError('Progressione cicli non valida')
         threat = data['perimeter_threat']
         if type(threat['enabled']) is not bool:
             raise ValueError('Attivazione scossa non valida')
-        speed = threat['speed_px_per_second']
+        speed = threat['speed_multiplier']
         if type(speed) not in (int, float) or not math.isfinite(speed) or speed <= 0:
             raise ValueError('Velocità scossa non valida')
         for key in ('body_size', 'sprite_max_size'):
@@ -87,12 +118,22 @@ def load_manifest(path=MANIFEST_PATH):
                 value not in ('.png', '.jpg', '.jpeg') for value in data['assets']['primary_suffixes']):
             raise ValueError('Formati primari non supportati')
         audio = data['audio']
+        if not audio['music_extensions'] or any(value != '.mp3' for value in audio['music_extensions']):
+            raise ValueError('Estensioni musica non supportate')
+        debug = data['debug_menu']
+        for key in ('max_lives', 'max_shields'):
+            _positive(debug[key], key)
+        if debug['max_lives'] < engine['initial_lives']:
+            raise ValueError('Limite debug inferiore alle vite normali')
+        if not debug['sequence'] or any(value not in ('up', 'down', 'left', 'right', 'shield')
+                                        for value in debug['sequence']):
+            raise ValueError('Sequenza debug non valida')
         if not (0 <= audio['drawing_attenuation'] <= audio['music_volume'] <= 1
                 and 0 <= audio['welding_volume'] <= 1):
             raise ValueError('Volumi non validi')
         ranking = data['leaderboard']
         _relative(ranking['file'])
-        for key in ('limit', 'name_max_chars', 'max_score', 'max_file_bytes'):
+        for key in ('limit', 'name_max_chars', 'max_score', 'max_file_bytes', 'max_completed_levels'):
             _positive(ranking[key], key)
         if ranking['name_max_chars'] > 32 or ranking['limit'] > 100:
             raise ValueError('Limiti classifica non supportati')
@@ -106,18 +147,21 @@ def load_manifest(path=MANIFEST_PATH):
             if required - item.keys():
                 raise ValueError('Profilo livello incompleto')
             for key in ('boss_speed', 'missile_speed', 'direction_jitter', 'pursuit_weight',
-                        'victory_percent', 'boss_render_scale'):
+                        'victory_percent', 'boss_render_scale', 'perimeter_speed_px_per_second'):
                 value = item[key]
                 if type(value) not in (int, float) or not math.isfinite(value):
                     raise ValueError(f'{key}: numero non finito')
             if (min(item['boss_speed'], item['missile_speed'], item['boss_render_scale']) <= 0
                     or item['direction_jitter'] < 0 or not 0 <= item['pursuit_weight'] <= 1
-                    or not 0 < item['victory_percent'] <= 100):
+                    or not 0 < item['victory_percent'] <= 100
+                    or item['perimeter_speed_px_per_second'] <= 0
+                    or type(item['perimeter_threat_count']) is not int
+                    or item['perimeter_threat_count'] not in (1, 2)):
                 raise ValueError('Bilanciamento del livello non valido')
             _positive(item['direction_interval_ms'], 'direction_interval_ms')
             if item['missile_interval_ms'] is not None:
                 _positive(item['missile_interval_ms'], 'missile_interval_ms')
-            for key in ('boss_sprite', 'music', 'primary', 'cover'):
+            for key in ('boss_sprite', 'primary', 'cover'):
                 _relative(item[key])
             if len(item['boss_max_size']) != 2:
                 raise ValueError('Dimensioni boss non valide')
@@ -130,14 +174,14 @@ def load_manifest(path=MANIFEST_PATH):
             raise ValueError('Scala proiettili non valida')
         frame = data['frame']
         width, height = frame['design_size']
-        for rect in [frame['game_area'], frame['footer'], *frame['values'].values()]:
+        for rect in [frame['game_area'], frame['footer'], *frame['values'].values(), *frame['labels'].values()]:
             x, y, w, h = rect
             if min(x, y) < 0 or min(w, h) <= 0 or x + w > width or y + h > height:
                 raise ValueError('Geometria cornice fuori dai limiti')
         for color in data['colors'].values():
             if len(color) != 3 or any(type(v) is not int or not 0 <= v <= 255 for v in color):
                 raise ValueError('Colore manifest non valido')
-        if len(data['ui']['strings']['menu_items']) != 3:
+        if set(data['ui']['menu_actions']) != {'start', 'scores', 'tutorial', 'language', 'quit'} or len(data['ui']['menu_actions']) != 5:
             raise ValueError('Menu principale non valido')
         data['fingerprint'] = sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
         return _freeze(data)
