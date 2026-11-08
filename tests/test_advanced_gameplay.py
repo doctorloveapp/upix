@@ -16,7 +16,7 @@ import pygame
 from application import CampaignApp
 from collisions import player_cell_allowed
 from game_state import GameState
-from fuse import Fuse
+from shock_system import ShockSystem
 from input_manager import InputFrame
 from level_config import get_level_config
 from manifest import MANIFEST
@@ -115,11 +115,11 @@ class AdvancedTests(unittest.TestCase):
         game._handle_hostile_contact()
         self.assertEqual(game.lives, 4)
 
-    def test_two_fuses_keep_opposite_directions_from_level_five(self):
+    def test_two_shocks_keep_opposite_directions_from_level_five(self):
         game = self.game
         game.level = 5
         with contextlib.redirect_stdout(io.StringIO()): game.start_level()
-        game.fuse.safe_ticks = (game.fuse.config.activation_ms * 60 + 999) // 1000
+        game.shock.safe_ticks = (game.shock.config.activation_ms * 60 + 999) // 1000
         game._update_perimeter_threat()
         first, second = game.perimeter_threats
         self.assertEqual((first.fixed_direction, second.fixed_direction), (1, -1))
@@ -129,7 +129,7 @@ class AdvancedTests(unittest.TestCase):
         self.assertAlmostEqual((before[1] - second.distance) % second.route.length, second.speed_per_tick)
         self.assertGreater(get_level_config(5).perimeter_speed_px_per_second,
                            get_level_config(4).perimeter_speed_px_per_second)
-        self.assertLess(get_level_config(5).fuse.activation_ms, get_level_config(4).fuse.activation_ms)
+        self.assertLess(get_level_config(5).shock.activation_ms, get_level_config(4).shock.activation_ms)
 
     def test_cycle_preserves_run_inventory_and_lives_but_resets_level_state(self):
         game = self.game
@@ -148,7 +148,7 @@ class AdvancedTests(unittest.TestCase):
         self.assertEqual(game.shields.charges, 2)
         self.assertEqual(game.game_clock.ticks, 0)
         self.assertEqual(game.score, 0)
-        self.assertFalse(game.fuse.warning)
+        self.assertFalse(game.shock.warning)
         self.assertEqual(game.missiles, [])
         self.assertGreater(game.level_config.boss_speed, get_level_config(1).boss_speed)
         game.percent = 80
@@ -164,7 +164,7 @@ class AdvancedTests(unittest.TestCase):
             extreme = get_level_config(level, 10000)
             base = get_level_config(level)
             self.assertLessEqual(extreme.boss_speed, base.boss_speed * 2)
-            self.assertGreaterEqual(extreme.fuse.activation_ms, 3000)
+            self.assertGreaterEqual(extreme.shock.activation_ms, 3000)
             self.assertLessEqual(extreme.victory_percent, 90)
             self.assertGreaterEqual(extreme.missile_interval_ms, 300)
 
@@ -187,7 +187,7 @@ class AdvancedTests(unittest.TestCase):
         finally:
             app.close()
 
-    def test_two_fuses_and_shield_contact_match_at_30_60_144_fps(self):
+    def test_two_shocks_and_shield_contact_match_at_30_60_144_fps(self):
         import random
         snapshots = []
         for fps in (30, 60, 144):
@@ -197,7 +197,7 @@ class AdvancedTests(unittest.TestCase):
                 game.level = 5
                 game.start_level()
             try:
-                game.fuse = Fuse(replace(game.level_config.fuse, warning_ms=100, activation_ms=500))
+                game.shock = ShockSystem(replace(game.level_config.shock, warning_ms=100, activation_ms=500))
                 game.shields.charges = 1
                 game.request_shield()
                 for frame in range(1, fps * 9 + 1):

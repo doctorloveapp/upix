@@ -57,8 +57,21 @@ def load_manifest(path=MANIFEST_PATH):
         if engine['empty_cell'] == engine['filled_cell']:
             raise ValueError('Stati delle celle indistinguibili')
         for key in ('root', 'player_sprite', 'frame', 'energy_sprite', 'shield_sprite',
-                    'life_sprite', 'music_dir', 'boss_dir'):
+                    'life_sprite', 'music_dir', 'boss_dir', 'death_sound'):
             _relative(data['assets'][key])
+        frames = data['assets']['death_frames']
+        if not isinstance(frames, list) or not frames or len(set(frames)) != len(frames):
+            raise ValueError('Sequenza di morte vuota o duplicata')
+        for frame_path in frames:
+            _relative(frame_path)
+        death = data['death_sequence']
+        _positive(death['frame_duration_ms'], 'frame_duration_ms')
+        for key in ('sprite_scale', 'sound_volume'):
+            value = death[key]
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError('Presentazione morte non valida')
+        if death['sprite_scale'] <= 0 or not 0 <= death['sound_volume'] <= 1:
+            raise ValueError('Scala o volume morte non validi')
         _relative(data['i18n']['directory'])
         if data['i18n']['language'] not in ('auto', 'it', 'en') or data['i18n']['fallback'] not in ('it', 'en'):
             raise ValueError('Lingua non supportata')
@@ -143,7 +156,7 @@ def load_manifest(path=MANIFEST_PATH):
         for item in levels:
             required = {'boss_speed', 'missile_speed', 'missile_interval_ms', 'direction_interval_ms',
                         'direction_jitter', 'pursuit_weight', 'victory_percent', 'boss_render_scale',
-                        'fuse', 'scoring', 'hint'}
+                        'shock', 'scoring', 'hint'}
             if required - item.keys():
                 raise ValueError('Profilo livello incompleto')
             for key in ('boss_speed', 'missile_speed', 'direction_jitter', 'pursuit_weight',

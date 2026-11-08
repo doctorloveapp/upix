@@ -63,7 +63,7 @@ class SpriteTests(unittest.TestCase):
 
     def test_rotation_can_be_disabled_or_offset_and_missing_asset_has_fallback(self):
         config = dict(MANIFEST['energy_visual'], rotate_with_velocity=False)
-        renderer = DirectionalSprite(ROOT / 'public/icon/miccia.png', (18, 18), config)
+        renderer = DirectionalSprite(ROOT / 'public/icon/shock.png', (18, 18), config)
         self.assertEqual(renderer.angle_for((0, 1)), 0)
         renderer.rotate = True
         renderer.source_angle = 90

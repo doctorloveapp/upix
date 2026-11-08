@@ -3,7 +3,7 @@
 Tributo arcade a **Qix (1981)** e **Volfied (1989)**, sviluppato in Python con Pygame. Si conquistano porzioni del campo per rivelare un'immagine, evitando il boss e i suoi missili durante il tracciamento.
 
 Il progetto contiene una campagna di **12 livelli con boss distinti**, cicli di
-difficoltà progressiva, Miccia anti-attesa, scudi e bonus di conquista.
+difficoltà progressiva, Scossa anti-attesa, scudi e bonus di conquista.
 L'avvio passa sempre dal **menu principale**. Run Score, riepiloghi di livello,
 finale di campagna e classifica locale sono implementati.
 Per verifiche, problemi aperti e roadmap consultare
@@ -57,13 +57,13 @@ Gli asset vengono cercati rispetto a `Upqix89.py`, indipendentemente dalla carte
 - Il territorio conquistato assorbe i missili al primo contatto, anche con muri di una cella.
 - La perdita del focus mette in pausa; premere P per riprendere. Boss, missili, input di movimento, timer e audio rimangono sospesi durante la pausa.
 - L'HUD mostra il tempo simulato del livello. Timer, spari, AI e movimento usano gli stessi tick; la pausa non crea arretrati alla ripresa.
-- Si parte con **5 vite**. Una vittoria con **≥74%** di conquista assegna una vita extra, annunciata nei premi e nel riepilogo. Dopo una morte si riparte dall'ultimo punto sicuro.
+- Si parte con **5 vite**. Una vittoria con **≥74%** di conquista assegna una vita extra, annunciata nei premi e nel riepilogo. Alla morte parte un'esplosione di sette fotogrammi con audio dedicato: il campo resta congelato per **700 ms**, poi si riparte dall'ultimo punto sicuro oppure appare il Game Over.
 - La vittoria richiede dal 70% nel tutorial all'86% nel livello 12, configurabile per livello. La percentuale include il bordo iniziale ed è corretta già all'avvio.
 - Durante `CAPTURING`, calcolo e rivelazione procedono a blocchi; fisica e timer restano sospesi, mentre eventi e rendering continuano. P sospende/riprende anche la cattura.
 - Il player è proporzionato nel box 30×30, centrato sulla cella logica. Il file attuale 1023×1183 produce **26×30**, dimensione condivisa dalla sua **AABB completa**. Sul bordo lo sprite può essere ritagliato dal campo.
-- La Miccia conta la permanenza in qualsiasi zona sicura, anche camminando. Nel livello 1 avvisa dopo 8 s e si attiva dopo 12 s: da quel momento il boss spara il doppio più spesso. Nei livelli successivi le soglie si riducono gradualmente. Il taglio sospende il conteggio ma non spegne la pressione; conquista o morte la azzerano.
-- Alla Miccia attiva compare una scossa nei livelli 1–4; dal **livello 5 sono due, in versi opposti fissi**. Nel ciclo 1 la velocità cresce da **150 a 260 px/s** e l'attivazione scende da **12 a 7,6 s**. Toccarle costa una vita se non protetti. Il confine segue le conquiste, senza BFS nel tick; le scosse restano sul bordo anche durante un taglio. Pausa e cattura le congelano; conquista, morte e nuovo livello le eliminano.
-- Scossa e missili usano `public/icon/miccia.png`, orientato nel verso di movimento. La scossa usa sprite nel box 18×18 e corpo 10×10; i missili mantengono sprite nel box 8×8 e corpo 5,2×5,2.
+- La Scossa conta la permanenza in qualsiasi zona sicura, anche camminando. Nel livello 1 avvisa dopo 8 s e si attiva dopo 12 s: da quel momento il boss spara il doppio più spesso. Nei livelli successivi le soglie si riducono gradualmente. Il taglio sospende il conteggio ma non spegne la pressione; conquista o morte la azzerano.
+- Alla Scossa attiva compare una scossa nei livelli 1–4; dal **livello 5 sono due, in versi opposti fissi**. Nel ciclo 1 la velocità cresce da **150 a 260 px/s** e l'attivazione scende da **12 a 7,6 s**. Toccarle costa una vita se non protetti. Il confine segue le conquiste, senza BFS nel tick; le scosse restano sul bordo anche durante un taglio. Pausa e cattura le congelano; conquista, morte e nuovo livello le eliminano.
+- Scossa e missili usano `public/icon/shock.png`, orientato nel verso di movimento. La scossa usa sprite nel box 18×18 e corpo 10×10; i missili mantengono sprite nel box 8×8 e corpo 5,2×5,2.
 - Una **singola conquista ≥25% dell'intero campo** dà uno scudo: compare `scudo.png` con label al centro. Spazio/X lo equipaggia; un contatto ostile lo consuma, con 500 ms di grazia contro urti duplicati. Il taglio colpito viene annullato e si torna al punto sicuro; l'autointersezione resta fatale. Il pannello **VITE/SCUDI**, per esempio **5/2**, include anche lo scudo equipaggiato finché non viene consumato.
 - Dopo il livello 12 si sceglie se **registrare e terminare** o **continuare dal livello 1 in un ciclo più difficile**. Il Run Score somma risultati conclusi e punteggio corrente. Solo il bonus corrente può scadere; quelli consolidati non vengono persi.
 
@@ -78,10 +78,10 @@ Il nome per la classifica viene
 richiesto al Game Over o scegliendo Registra e termina dopo la campagna.
 
 Continuare un ciclo conserva Run Score, vite e cariche scudo. Campo, timer,
-punti/bonus del livello, boss, scia, missili e Miccia vengono reinizializzati;
+punti/bonus del livello, boss, scia, missili e Scossa vengono reinizializzati;
 lo scudo viene riposto. Ogni ciclo aggiunge 15% alle velocità (massimo 200%),
 riduce gli intervalli di 10 punti percentuali (minimo 40%) e aggiunge 2 punti
-alla soglia di vittoria (massimo 90%). Spari mai sotto 300 ms, Miccia mai sotto
+alla soglia di vittoria (massimo 90%). Spari mai sotto 300 ms, Scossa mai sotto
 3000 ms. Il calcolo riparte sempre dal profilo base. Una nuova campagna dal
 menu riparte invece con cinque vite, zero scudi, zero punti e ciclo 1.
 
@@ -120,7 +120,7 @@ simulano il controller; il collaudo sul pad fisico rimane necessario.
 
 ## Avvio debug nascosto
 
-Dal Menu Principale: **SU, GIÙ, SINISTRA, DESTRA, SU, SU, SPAZIO**.
+Dal Menu Principale: **Segreto**.
 Si apre un overlay per scegliere livello **1–12**, vite **1–99** e scudi **0–99**.
 Su/Giù seleziona il campo, Sinistra/Destra cambia il valore, Invio/A avvia,
 Esc/B annulla. X può sostituire lo Spazio finale sul controller.
@@ -135,7 +135,7 @@ limiti sono parametrizzati in `debug_menu` nel manifest.
 `game_manifest.json` è la fonte di configurazione. `manifest.py` carica e valida
 il documento prima di avviare il gioco. `level_config.py` espone profili immutabili per velocità del boss,
 sprite, intervallo/velocità dei missili, variazioni di direzione, inseguimento,
-soglia di vittoria, chiave del suggerimento, Miccia/punteggio e numero/velocità
+soglia di vittoria, chiave del suggerimento, Scossa/punteggio e numero/velocità
 delle scosse. Le velocità boss/missili sono pixel logici per
 tick a 60 Hz; lo spawn e i cambi direzione usano la stessa magnitudine.
 
@@ -155,7 +155,7 @@ tick a 60 Hz; lo spawn e i cambi direzione usano la stessa magnitudine.
 | 12 | 6,0 | 5,3 | 750 ms | 86% |
 
 Il manifest esplicita i dodici profili senza salto dopo il tutorial. Configura
-anche percorsi di primarie/coperture, sprite, cartella musicale, Miccia, score, controlli,
+anche percorsi di primarie/coperture, sprite, cartella musicale, Scossa, score, controlli,
 dimensioni, audio, cornice, controlli, menu, localizzazione, scudi, premi e classifica.
 I testi sono nei cataloghi, referenziati per chiave. Le modifiche si applicano
 al riavvio. Ogni livello usa `boss1.png`–`boss12.png` secondo il manifest.
@@ -163,10 +163,10 @@ L'inseguimento dei tagli cresce dal
 livello 3; le variazioni di direzione diventano più frequenti. La mira usa la
 posizione logica al lancio, poi il missile prosegue rettilineo.
 
-`LevelConfig.fuse` usa `FuseConfig`: `enabled=False` disattiva la meccanica,
+`LevelConfig.shock` usa `ShockConfig`: `enabled=False` disattiva la meccanica,
 `warning_ms` e `activation_ms` regolano le soglie, `shot_interval_percent`
 regola la cadenza sotto pressione (50 = metà intervallo). Le soglie scendono
-da 8/12 s a 5,25/7,6 s. La logica è separata in `fuse.py`, senza Pygame o tempo
+da 8/12 s a 5,25/7,6 s. La logica è separata in `shock_system.py`, senza Pygame o tempo
 reale. Pausa, cattura e stati terminali congelano conteggio e bonus.
 
 La base del punteggio vale **10 punti per cella di area conquistata**, esclusi
@@ -181,7 +181,7 @@ alla vittoria restano acquisiti.
 `LevelConfig.scoring`/`ScoreConfig` regolano punti, percentuale del bonus e limite;
 `area_bonus_percent=0` disattiva il bonus. Il calcolo usa soltanto interi.
 
-La Miccia aumenta il rischio del taglio successivo; i territori sicuri continuano
+La Scossa aumenta il rischio del taglio successivo; i territori sicuri continuano
 ad assorbire i missili. L'attesa prolungata riduce anche il bonus disponibile.
 La taratura completa richiede playtest sul dispositivo reale.
 
@@ -236,10 +236,11 @@ Upix/
 ├── shields.py                # Cariche, equipaggiamento e grazia a tick fissi
 ├── collisions.py            # Geometria e solver AABB indipendente (Passi 1A–1B)
 ├── game_state.py            # Stati, accumulatore 60 Hz e tempo simulato
+├── death_sequence.py        # Animazione di morte e durata a tick fissi
 ├── viewport.py              # Proiezione uniforme del frame logico sulla finestra
 ├── hud.py                   # HUD esterno al campo, con cache del testo
 ├── level_config.py          # Configurazioni immutabili dei 12 livelli
-├── fuse.py                  # Miccia e cadenza sotto pressione, a tick fissi
+├── shock_system.py          # Scossa e cadenza sotto pressione, a tick fissi
 ├── perimeter_threat.py      # Contorni per segmenti e scossa con collisioni continue
 ├── sprite_renderer.py       # Sprite orientati con cache delle rotazioni
 ├── scoring.py               # Punti base e bonus area/tempo deterministico
@@ -256,7 +257,9 @@ Upix/
 │   ├── test_game_state.py    # Tick, accumulatore e sovraccarico senza attese reali
 │   ├── test_viewport.py      # Proiezione, frame completo e bande
 │   ├── test_level_config.py  # Tutorial, missili, aggressività e configurazioni
-│   ├── test_fuse.py          # Soglie esatte, disattivazione e persistenza
+│   ├── test_shock_system.py  # Soglie esatte, disattivazione e persistenza
+│   ├── test_death_sequence.py # Esplosione, audio, freeze e respawn/finale
+│   ├── test_lives.py         # Contabilità 15/99 vite e riarmo dopo il respawn
 │   ├── test_perimeter_threat.py # Contorni, inseguimento e collisioni sul bordo
 │   ├── test_sprite_renderer.py # Rotazione, centratura e cache limitata
 │   ├── test_scoring.py       # Bonus per area, tempo e arrotondamenti
@@ -269,7 +272,7 @@ Upix/
 │   ├── test_music.py         # Scoperta MP3, giri senza ripetizioni e pausa
 │   ├── test_player_motion.py # Confine, angoli e movimento senza tunnel
 │   ├── test_shields.py       # Soglie, inventario e protezione singola
-│   ├── test_advanced_gameplay.py # Premi, doppie micce, loop e determinismo
+│   ├── test_advanced_gameplay.py # Premi, doppie scosse, loop e determinismo
 │   └── test_assets.py        # SVG, testo, cache e fallback
 ├── docs/WEB_RELEASE.md       # Strategia di pubblicazione sul sito
 ├── web/                     # Contratto API e schema SQL proposti
@@ -278,7 +281,7 @@ Upix/
 │   └── benchmark_capture.py  # Budget di cattura e costo CPU del frame completo
 └── public/
     ├── assets/              # SVG di copertura e PNG/JPG primarie da svelare
-    ├── icon/                # Player, boss1 … boss12, miccia, scudo e cornice
+    ├── icon/                # Player, boss1 … boss12, scossa, scudo e cornice
     ├── music/               # MP3 scoperti automaticamente all'avvio
     └── sounds/              # Effetto originale MP3 e WAV preparato
 ```
@@ -369,17 +372,26 @@ In sovraccarico la simulazione rallenta rispetto al tempo reale. `CAPTURING`
 ferma il tempo simulato e azzera gli arretrati all'uscita; nessun recupero del
 tempo speso a pianificare la conquista.
 
-Dopo una morte occorre rilasciare la direzione (tastiera, D-pad o stick al
+Dopo il respawn occorre rilasciare la direzione (tastiera, D-pad o stick al
 neutro) prima di premere di nuovo per ripartire. Un avviso IT/EN lo segnala:
 il tasto mantenuto non può consumare altre vite riaprendo subito lo stesso
-taglio. Boss, timer e Miccia restano attivi durante l'attesa. Il pannello
+taglio. Boss, timer e Scossa restano attivi durante l'attesa. Il pannello
 `VITE/SCUDI` mostra nell'ordine le vite residue e gli scudi disponibili.
 
-Gli stati `PLAYING`, `CAPTURING`, `PAUSED`, `LEVEL_CLEAR`, `GAME_OVER` e `PHYSICS_ERROR`
+Gli stati `PLAYING`, `DYING`, `CAPTURING`, `PAUSED`, `LEVEL_CLEAR`, `GAME_OVER` e `PHYSICS_ERROR`
 sono espliciti. `game_over` e `win` sono proprietà derivate dallo stato.
 La pausa sospende canali e musica senza riavviare i campioni alla ripresa.
 `CampaignApp` coordina inoltre `MENU`, `TUTORIAL`, `HIGHSCORES`, `NAME_ENTRY` e
 `CAMPAIGN_COMPLETE`, creando la simulazione solo all'avvio della campagna.
+
+`DeathSequence` governa esclusivamente la presentazione durante `DYING`:
+sette fotogrammi da 100 ms, con fisica, tempo e bonus congelati. La vita viene
+scalata una sola volta dopo l'avvio della sequenza/audio; anche l'ultima morte
+attende il settimo frame prima del Game Over. P e perdita del focus sospendono
+anche l'esplosione. `assets.death_frames` e `assets.death_sound` scelgono gli
+asset; `death_sequence.frame_duration_ms`, `sprite_scale` e `sound_volume`
+regolano durata, scala relativa al player e volume. Il MP3 può terminare
+naturalmente dopo la fine dell'animazione; la musica riprende al respawn/finale.
 
 ## Verifiche
 
@@ -387,7 +399,7 @@ La pausa sospende canali e musica senza riavviare i campioni alla ripresa.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-I **233 test** coprono geometria/solver, missili continui, stati/pausa, timer,
+I **248 test** coprono geometria/solver, missili continui, stati/pausa, timer,
 cattura, audio, respawn, vittoria,
 progressione, le 12 coppie copertura/immagine primaria senza label, cache, rendering
 del boss e fallback. Una regressione con SVG e PNG di colori distinti verifica
@@ -399,10 +411,10 @@ assenza di deriva, sovraccarico, proiezione e loop reale con eventi sintetici.
 Le nuove verifiche includono parametri dei tre livelli, traiettoria del missile,
 inseguimento del boss, cattura a budget diversi, confronto con una BFS di
 riferimento su 25 campi frammentati, commit unico, pausa/cancellazione e HUD esterno.
-Sono inoltre verificati soglie e cadenza della Miccia, reset/disattivazione,
+Sono inoltre verificati soglie e cadenza della Scossa, reset/disattivazione,
 premio dei tagli ampi, scadenza del bonus, sprite player centrato con AABB completa,
 soglie di vittoria e spari di tutti i 12 livelli, e determinismo con
-Miccia attiva e bonus a 30/60/144 FPS.
+Scossa attiva e bonus a 30/60/144 FPS.
 Sono verificati anche il menu iniziale, il Run Score senza accrediti duplicati,
 la campagna completa, i riepiloghi, la classifica JSON con scrittura atomica,
 errori e retry, l'adattatore browser e la validazione del manifest.
@@ -411,8 +423,8 @@ frammentate, con collisioni continue ai corner, perdita di una sola vita,
 reset dopo conquista, sospensione e determinismo a FPS diversi. Fixture
 asimmetriche verificano orientamento e centratura degli sprite.
 Le nuove regressioni coprono anche input/controller, i18n, frontiere con angoli,
-vita extra al 74%, scudo al 25%, due micce in versi opposti, contatto protetto,
-persistenza di 13 risultati nel JSON e confronto a FPS diversi con due micce
+vita extra al 74%, scudo al 25%, due scosse in versi opposti, contatto protetto,
+persistenza di 13 risultati nel JSON e confronto a FPS diversi con due scosse
 e consumo dello scudo. Nessuna lettura dei dispositivi fisici nel tick.
 Sono verificati anche sequenza debug, reset degli avvii personalizzati,
 shuffle completo senza ripetizioni, premi combinati e cambio lingua a caldo

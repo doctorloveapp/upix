@@ -28,3 +28,11 @@ class LocalizationTests(unittest.TestCase):
     def test_explicit_environment_override_has_priority(self):
         with mock.patch.dict(os.environ, {'UPIX_LANGUAGE': 'it_IT', 'LANG': 'en_US'}):
             self.assertEqual(system_language(), 'it_IT')
+
+    def test_shock_labels_and_tutorial_use_the_same_name(self):
+        directory = ROOT / MANIFEST['i18n']['directory']
+        for language, name in (('it', 'scossa'), ('en', 'shock')):
+            catalog = Localizer(directory, language)
+            self.assertIn(name, catalog.text('shock_warning', seconds=3).lower())
+            self.assertIn(name, catalog['shock_active'].lower())
+            self.assertTrue(any(name[:4] in line.lower() for line in catalog['tutorial_lines']))

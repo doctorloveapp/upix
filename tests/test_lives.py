@@ -51,6 +51,16 @@ class LivesTests(unittest.TestCase):
     def collide(self):
         self.game._update_player(InputFrame())  # Rilascio: nuovo tentativo intenzionale.
         self.game._update_player(InputFrame((0, -1)))
+        self.finish_death()
+
+    def finish_death(self, game=None):
+        game = game or self.game
+        for _ in range(100):
+            if game.state != GameState.DYING:
+                return
+            self.now += 17
+            game.advance_frame(InputFrame((0, -1)))
+        self.fail('La sequenza di morte non termina')
 
     def test_fifteen_lives_ten_distinct_collisions_leave_five_and_fifteenth_ends_run(self):
         game = self.game
@@ -91,6 +101,7 @@ class LivesTests(unittest.TestCase):
     def test_keyboard_mapping_requires_release_too(self):
         keys = collections.defaultdict(bool, {pygame.K_UP: True})
         self.game._update_player(keys)
+        self.finish_death()
         self.game._update_player(keys)
         self.assertEqual(self.game.lives, 14)
         self.game._update_player(collections.defaultdict(bool))
@@ -127,7 +138,7 @@ class LivesTests(unittest.TestCase):
         self.assertEqual((game.lives, game.shields.charges), (14, 4))
 
     def test_nonplaying_states_cannot_consume_lives(self):
-        for state in (GameState.PAUSED, GameState.CAPTURING, GameState.LEVEL_CLEAR,
+        for state in (GameState.PAUSED, GameState.DYING, GameState.CAPTURING, GameState.LEVEL_CLEAR,
                       GameState.CAMPAIGN_COMPLETE, GameState.GAME_OVER, GameState.PHYSICS_ERROR):
             self.game._set_state(state)
             self.game.shields.charges = 2
@@ -154,7 +165,7 @@ class LivesTests(unittest.TestCase):
 
         self.collide()
         game = self.game
-        game.fuse.safe_ticks = game.fuse.config.activation_ms * 60 // 1000
+        game.shock.safe_ticks = game.shock.config.activation_ms * 60 // 1000
         route = game.perimeter_routes[0]
         target = ((game.player_x + .5) * upix.CELL_SIZE,
                   (game.player_y + .5) * upix.CELL_SIZE)
@@ -162,6 +173,8 @@ class LivesTests(unittest.TestCase):
         game.perimeter_threat = PerimeterThreat(route, distance, speed_per_tick=1, body_size=(10, 10))
         game.update(InputFrame((0, -1)))
         self.assertEqual(game.lives, 13)
+        self.assertEqual(game.state, GameState.DYING)
+        self.finish_death()
         self.assertIsNone(game.perimeter_threat)
 
     def test_maximum_debug_lives_are_not_capped_to_normal_start_value(self):
@@ -170,6 +183,7 @@ class LivesTests(unittest.TestCase):
         self.addCleanup(game._stop_draw_audio)
         for death in range(1, 100):
             game.handle_death()
+            self.finish_death(game)
             self.assertEqual(game.lives, 99 - death)
             self.assertEqual(game.state, GameState.PLAYING if death < 99 else GameState.GAME_OVER)
 

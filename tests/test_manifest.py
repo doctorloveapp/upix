@@ -15,7 +15,7 @@ class ManifestTests(unittest.TestCase):
         for config, source in zip(LEVEL_CONFIGS, data['levels']):
             self.assertEqual(config.boss_sprite, source['boss_sprite'])
             self.assertEqual(config.victory_percent, source['victory_percent'])
-            self.assertEqual(config.fuse.activation_ms, source['fuse']['activation_ms'])
+            self.assertEqual(config.shock.activation_ms, source['shock']['activation_ms'])
             self.assertEqual(config.scoring.bonus_time_limit_ms, source['scoring']['bonus_time_limit_ms'])
         self.assertEqual([item.boss_sprite for item in LEVEL_CONFIGS[:5]],
                          [f'boss{level}.png' for level in range(1, 6)])
@@ -61,10 +61,29 @@ class ManifestTests(unittest.TestCase):
                 ('energy_visual', 'rotation_step_degrees', 7),
                 ('energy_visual', 'rotate_with_velocity', 'yes'),
                 ('energy_visual', 'source_angle_degrees', float('nan')),
-                ('assets', 'energy_sprite', '../miccia.png')):
+                ('assets', 'energy_sprite', '../shock.png')):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as folder:
                 data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
                 data[section][field] = value
+                path = Path(folder) / 'bad.json'
+                path.write_text(json.dumps(data), encoding='utf-8')
+                with self.assertRaises(ValueError):
+                    load_manifest(path)
+
+    def test_death_presentation_requires_valid_assets_scale_timing_and_volume(self):
+        for section, key, value in (
+                ('assets', 'death_frames', []),
+                ('assets', 'death_frames', ['icon/a.png', 'icon/a.png']),
+                ('assets', 'death_frames', ['../a.png']),
+                ('assets', 'death_sound', '../explosion.mp3'),
+                ('death_sequence', 'frame_duration_ms', 0),
+                ('death_sequence', 'sprite_scale', float('nan')),
+                ('death_sequence', 'sprite_scale', -1),
+                ('death_sequence', 'sound_volume', True),
+                ('death_sequence', 'sound_volume', 2)):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as folder:
+                data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
+                data[section][key] = value
                 path = Path(folder) / 'bad.json'
                 path.write_text(json.dumps(data), encoding='utf-8')
                 with self.assertRaises(ValueError):

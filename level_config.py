@@ -3,7 +3,7 @@
 from dataclasses import dataclass, replace
 import math
 
-from fuse import FuseConfig
+from shock_system import ShockConfig
 from scoring import ScoreConfig
 from manifest import MANIFEST
 
@@ -19,7 +19,7 @@ class LevelConfig:
     pursuit_weight: float
     victory_percent: float
     hint: str
-    fuse: FuseConfig = FuseConfig()
+    shock: ShockConfig = ShockConfig()
     scoring: ScoreConfig = ScoreConfig()
     primary: str = ''
     cover: str = ''
@@ -48,8 +48,8 @@ class LevelConfig:
 
 LEVEL_CONFIGS = tuple(LevelConfig(
     **{key: value for key, value in item.items()
-       if key not in ('number', 'fuse', 'scoring', 'boss_max_size')},
-    fuse=FuseConfig(**item['fuse']), scoring=ScoreConfig(**item['scoring']),
+       if key not in ('number', 'shock', 'scoring', 'boss_max_size')},
+    shock=ShockConfig(**item['shock']), scoring=ScoreConfig(**item['scoring']),
     boss_max_size=tuple(item['boss_max_size']),
 ) for item in MANIFEST['levels'])
 
@@ -66,8 +66,8 @@ def get_level_config(level: int, cycle: int = 1) -> LevelConfig:
     # Limiti espliciti: nessuna crescita illimitata del costo del solver.
     speed = min(tuning['max_speed_percent'], 100 + (cycle - 1) * tuning['speed_step_percent']) / 100
     interval = max(tuning['min_interval_percent'], 100 - (cycle - 1) * tuning['interval_step_percent'])
-    activation = max(tuning['minimum_fuse_ms'], base.fuse.activation_ms * interval // 100)
-    warning = min(activation - 1, base.fuse.warning_ms * activation // base.fuse.activation_ms)
+    activation = max(tuning['minimum_shock_ms'], base.shock.activation_ms * interval // 100)
+    warning = min(activation - 1, base.shock.warning_ms * activation // base.shock.activation_ms)
     return replace(base,
         boss_speed=base.boss_speed * speed, missile_speed=base.missile_speed * speed,
         missile_interval_ms=(None if base.missile_interval_ms is None else
@@ -75,4 +75,4 @@ def get_level_config(level: int, cycle: int = 1) -> LevelConfig:
         perimeter_speed_px_per_second=base.perimeter_speed_px_per_second * speed,
         victory_percent=min(tuning['max_victory_percent'],
                             base.victory_percent + (cycle - 1) * tuning['victory_step_percent']),
-        fuse=replace(base.fuse, warning_ms=warning, activation_ms=activation))
+        shock=replace(base.shock, warning_ms=warning, activation_ms=activation))

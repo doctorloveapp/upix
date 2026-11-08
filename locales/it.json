@@ -23,8 +23,8 @@
   "pause": "PAUSA - P / Start: riprendi",
   "physics_title": "FISICA SOSPESA - R: riavvia il livello",
   "capture": "Chiusura del territorio...",
-  "fuse_active": "SCOSSA SUL BORDO! Conquista per disinnescare",
-  "fuse_warning": "MICCIA {seconds}s: lascia il bordo e conquista!",
+  "shock_active": "SCOSSA SUL BORDO! Conquista per disinnescare",
+  "shock_warning": "SCOSSA {seconds}s: lascia il bordo e conquista!",
   "run_score": "RUN SCORE  {score:09d}",
   "completed_levels": "LIVELLI COMPLETATI  {levels}",
   "summary_capture": "CATTURA  {percent:.1f}%   VITE  {lives}",
@@ -57,7 +57,7 @@
     "Parti con {lives} vite. Vinci con almeno {extra}%: una vita extra.",
     "Un solo taglio da almeno {shield}% del campo regala uno scudo.",
     "Spazio / X: scudo rosa, protegge da un contatto nemico.",
-    "Dal livello 5 due micce girano in versi opposti. Non aspettare!",
+    "Dal livello 5 due scosse girano in versi opposti. Non aspettare!",
     "Dopo il 12: salva o continua un ciclo più difficile."
   ],
   "cycle_options": [

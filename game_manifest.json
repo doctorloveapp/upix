@@ -33,7 +33,7 @@
   "assets": {
     "root": "public",
     "player_sprite": "icon/cursor_lukso.png",
-    "energy_sprite": "icon/miccia.png",
+    "energy_sprite": "icon/shock.png",
     "welding_sounds": [
       "sounds/saldatrice.wav",
       "sounds/saldatrice.mp3"
@@ -47,7 +47,22 @@
     "boss_dir": "icon",
     "music_dir": "music",
     "shield_sprite": "icon/scudo.png",
-    "life_sprite": "icon/vita.png"
+    "life_sprite": "icon/vita.png",
+    "death_frames": [
+      "icon/death_sequence/cursor_lukso_death1.png",
+      "icon/death_sequence/cursor_lukso_death2.png",
+      "icon/death_sequence/cursor_lukso_death3.png",
+      "icon/death_sequence/cursor_lukso_death4.png",
+      "icon/death_sequence/cursor_lukso_death5.png",
+      "icon/death_sequence/cursor_lukso_death6.png",
+      "icon/death_sequence/cursor_lukso_death7.png"
+    ],
+    "death_sound": "icon/death_sequence/esplosione.mp3"
+  },
+  "death_sequence": {
+    "frame_duration_ms": 100,
+    "sprite_scale": 1.0,
+    "sound_volume": 0.85
   },
   "perimeter_threat": {
     "enabled": true,
@@ -231,7 +246,7 @@
       "pursuit_weight": 0.0,
       "victory_percent": 70,
       "hint": "hint_01",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 8000,
         "activation_ms": 12000,
@@ -263,7 +278,7 @@
       "pursuit_weight": 0.0,
       "victory_percent": 72,
       "hint": "hint_02",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 7750,
         "activation_ms": 11600,
@@ -295,7 +310,7 @@
       "pursuit_weight": 0.15,
       "victory_percent": 74,
       "hint": "hint_03",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 7500,
         "activation_ms": 11200,
@@ -327,7 +342,7 @@
       "pursuit_weight": 0.2,
       "victory_percent": 76,
       "hint": "hint_04",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 7250,
         "activation_ms": 10800,
@@ -359,7 +374,7 @@
       "pursuit_weight": 0.25,
       "victory_percent": 78,
       "hint": "hint_05",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 7000,
         "activation_ms": 10400,
@@ -391,7 +406,7 @@
       "pursuit_weight": 0.3,
       "victory_percent": 80,
       "hint": "hint_06",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 6750,
         "activation_ms": 10000,
@@ -423,7 +438,7 @@
       "pursuit_weight": 0.35,
       "victory_percent": 81,
       "hint": "hint_07",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 6500,
         "activation_ms": 9600,
@@ -455,7 +470,7 @@
       "pursuit_weight": 0.4,
       "victory_percent": 82,
       "hint": "hint_08",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 6250,
         "activation_ms": 9200,
@@ -487,7 +502,7 @@
       "pursuit_weight": 0.45,
       "victory_percent": 83,
       "hint": "hint_09",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 6000,
         "activation_ms": 8800,
@@ -519,7 +534,7 @@
       "pursuit_weight": 0.5,
       "victory_percent": 84,
       "hint": "hint_10",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 5750,
         "activation_ms": 8400,
@@ -551,7 +566,7 @@
       "pursuit_weight": 0.55,
       "victory_percent": 85,
       "hint": "hint_11",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 5500,
         "activation_ms": 8000,
@@ -583,7 +598,7 @@
       "pursuit_weight": 0.6,
       "victory_percent": 86,
       "hint": "hint_12",
-      "fuse": {
+      "shock": {
         "enabled": true,
         "warning_ms": 5250,
         "activation_ms": 7600,
@@ -649,7 +664,7 @@
       "interval_step_percent": 10,
       "min_interval_percent": 40,
       "minimum_shot_ms": 300,
-      "minimum_fuse_ms": 3000,
+      "minimum_shock_ms": 3000,
       "victory_step_percent": 2,
       "max_victory_percent": 90
     }

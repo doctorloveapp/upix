@@ -3,13 +3,13 @@ import math
 import random
 from pathlib import Path
 from time import perf_counter_ns
-from assets import load_level_cover, load_level_image, load_sprite
+from assets import load_animation_frames, load_level_cover, load_level_image, load_sprite
 from campaign import LevelResult, RunScore
 from manifest import MANIFEST, ROOT
 from collisions import (AABB, CollisionGrid, move_body, move_projectile,
                         move_player, player_cell_allowed, swept_contact)
 from game_state import FixedTimestep, GameState, SimulationClock
-from fuse import Fuse
+from shock_system import ShockSystem
 from perimeter_threat import PerimeterThreat, build_perimeters
 from sprite_renderer import DirectionalSprite
 from input_manager import InputFrame, keyboard_direction
@@ -21,6 +21,7 @@ from hud import Hud, HudData
 from level_config import LEVEL_CONFIGS, get_level_config
 from music import MusicPlayer
 from debug_menu import StartSettings
+from death_sequence import DeathSequence
 from viewport import Viewport
 
 # --- CONFIGURAZIONE ---
@@ -76,12 +77,16 @@ class Game:
         # --- AUDIO SETUP ---
         self.sound_draw = None
         self.draw_channel = None
+        self.death_sound = None
+        self.death_channel = None
         try:
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
-            # Il canale 0 appartiene alla saldatrice, anche con altri effetti futuri.
-            pygame.mixer.set_reserved(1)
+            # Canali riservati: 0 saldatrice, 1 esplosione.
+            pygame.mixer.set_reserved(2)
             self.draw_channel = pygame.mixer.Channel(0)
+            self.death_channel = pygame.mixer.Channel(1)
+            self.death_channel.stop()
             self.draw_channel.stop()
             # WAV pronto per effetti brevi; l'MP3 originale resta un fallback.
             for filename in MANIFEST['assets']['welding_sounds']:
@@ -92,12 +97,23 @@ class Game:
                     break
                 except (pygame.error, OSError) as exc:
                     print(f"Effetto audio non disponibile ({sound_path}): {exc}")
+            try:
+                self.death_sound = pygame.mixer.Sound(str(ASSET_DIR / MANIFEST['assets']['death_sound']))
+                self.death_sound.set_volume(MANIFEST['death_sequence']['sound_volume'])
+            except (pygame.error, OSError) as exc:
+                print(f"Audio esplosione non disponibile: {exc}")
         except pygame.error as exc:
             print(f"Audio disabilitato: {exc}")
 
         # Carica Cursore
         self.cursor_img, self.player_sprite_size = load_sprite(
             ASSET_DIR / MANIFEST['assets']['player_sprite'], PLAYER_SPRITE_SIZE)
+        death = MANIFEST['death_sequence']
+        self.death_frames = load_animation_frames(
+            (ASSET_DIR / path for path in MANIFEST['assets']['death_frames']),
+            self.player_sprite_size, death['sprite_scale'])
+        self.death_sequence = DeathSequence(len(self.death_frames), death['frame_duration_ms'],
+                                           ENGINE['simulation_hz'])
         energy_path = ASSET_DIR / MANIFEST['assets']['energy_sprite']
         self.missile_visual = DirectionalSprite(
             energy_path, (MISSILE_RENDER_RADIUS * 2,) * 2, MANIFEST['energy_visual'])
@@ -165,7 +181,7 @@ class Game:
         self.frame_clock.reset()
         if state == GameState.PLAYING:
             self.game_clock.resume()
-            if previous == GameState.PAUSED:
+            if previous in (GameState.PAUSED, GameState.DYING):
                 self._resume_audio()
             self._sync_draw_audio()
         else:
@@ -188,7 +204,12 @@ class Game:
             else:
                 if previous == GameState.PAUSED:
                     self._resume_audio()
+                elif previous == GameState.DYING:
+                    if pygame.mixer.get_init():
+                        pygame.mixer.music.unpause()
                 self._stop_draw_audio()
+                if state == GameState.DYING and pygame.mixer.get_init():
+                    pygame.mixer.music.pause()
 
     def _resume_audio(self):
         if pygame.mixer.get_init():
@@ -196,7 +217,7 @@ class Game:
             pygame.mixer.music.unpause()
 
     def pause(self):
-        if self.state in (GameState.PLAYING, GameState.CAPTURING):
+        if self.state in (GameState.PLAYING, GameState.CAPTURING, GameState.DYING):
             self._resume_state = self.state
             self._set_state(GameState.PAUSED)
 
@@ -206,38 +227,55 @@ class Game:
         else:
             self.pause()
 
-    def handle_death(self):
+    def handle_death(self, *, center=None):
         if self.state != GameState.PLAYING:
             return
+        if center is None:
+            center = ((self.player_x + .5) * CELL_SIZE, (self.player_y + .5) * CELL_SIZE)
+        self.death_sequence.start(center)
+        self._set_state(GameState.DYING)  # Sospende clock e musica, annulla il recupero.
+        if self.death_sound is not None and self.death_channel is not None:
+            self.death_channel.play(self.death_sound)
+        # Sequenza e audio sono già avviati; le chiamate successive in DYING
+        # vengono rifiutate prima di qualunque ulteriore decremento.
         self.lives -= 1
-        # Il respawn è una discontinuità: non riusare l'input del colpo nei
-        # tick arretrati prima che il giocatore possa vedere la vita persa.
-        self.frame_clock.reset()
         self._respawn_waiting_for_release = True
-        self._stop_draw_audio()
+        self._shield_requested = False
+        print(tr('diagnostic_lives', lives=self.lives))
+
+    def _advance_death(self):
+        if self.death_sequence.advance():
+            self._finish_death()
+
+    def _finish_death(self):
+        """Unico commit dopo l'ultimo frame: pulizia e respawn oppure finale."""
         self.dx = self.dy = 0
         self.drawing = False
         self.current_trail = []
         self.missiles = []
-        self.fuse.reset()
+        self.shock.reset()
         self.perimeter_threat = None
         self.shields.on_death()
         self._shield_requested = False
-        print(tr('diagnostic_lives', lives=self.lives))
         
         if self.lives > 0:
             # Respawn all'ultima posizione sicura conosciuta
             self.player_x = self.last_safe_x
             self.player_y = self.last_safe_y
-            
+            self._set_state(GameState.PLAYING)
         else:
             self._set_state(GameState.GAME_OVER)
+
+    def cancel_death(self):
+        self.death_sequence.cancel()
+        if self.death_channel is not None:
+            self.death_channel.stop()
 
     def request_shield(self):
         if self.state == GameState.PLAYING:
             self._shield_requested = True
 
-    def _handle_hostile_contact(self):
+    def _handle_hostile_contact(self, *, center=None):
         if self.state != GameState.PLAYING:
             return
         if self.shields.absorb():
@@ -250,7 +288,7 @@ class Game:
             self.dx = self.dy = 0
             self._stop_draw_audio()
         else:
-            self.handle_death()
+            self.handle_death(center=center)
 
     def _stop_draw_audio(self):
         if self.draw_channel is not None:
@@ -275,8 +313,9 @@ class Game:
         self.music.ensure_playing()
 
     def start_level(self):
-        if self.state == GameState.PAUSED:
+        if self.state in (GameState.PAUSED, GameState.DYING):
             self._resume_audio()
+        self.cancel_death()
         self._stop_draw_audio()
         self._cancel_capture()
         self.level_result = None
@@ -284,7 +323,7 @@ class Game:
         self.level_config = get_level_config(self.level, self.cycle)
         self.shields.start_level()
         self._shield_requested = False
-        self.fuse = Fuse(self.level_config.fuse)
+        self.shock = ShockSystem(self.level_config.shock)
         self.perimeter_threat = None
         self.level_score = LevelScore(self.level_config.scoring, COLS * ROWS)
         self.boss_img = self._load_boss_sprite()
@@ -463,7 +502,7 @@ class Game:
         self._filled_cells += capture.cell_count
         self.level_score.capture(capture.area_count)
         self.shields.award(capture.cell_count, COLS * ROWS)
-        self.fuse.reset()
+        self.shock.reset()
         self.current_trail = []
         self.drawing = False
         self.dx, self.dy = 0, 0
@@ -524,7 +563,7 @@ class Game:
 
     def _update_perimeter_threat(self):
         config = MANIFEST['perimeter_threat']
-        if not self.fuse.active or not config['enabled']:
+        if not self.shock.active or not config['enabled']:
             self.perimeter_threat = None
             return True
         target = ((self.player_x + 0.5) * CELL_SIZE, (self.player_y + 0.5) * CELL_SIZE)
@@ -588,8 +627,10 @@ class Game:
 
     def advance_frame(self, keys=None):
         """Consuma il tempo reale; input stabile per tutti i tick del frame."""
-        self.music.update(paused=self.state == GameState.PAUSED)
+        self.music.update(paused=self.state in (GameState.PAUSED, GameState.DYING))
         self._sync_draw_audio()
+        if self.state == GameState.DYING:
+            return self.frame_clock.advance(self._advance_death)
         if self.state == GameState.CAPTURING:
             self._advance_capture()
             return 0
@@ -612,7 +653,7 @@ class Game:
         current_time = self.game_clock.elapsed_ms
         # Il tempo sicuro include anche il movimento lungo il bordo/territorio.
         # La pressione resta attiva nel taglio, fino a conquista o morte.
-        self.fuse.advance(safe=not self.drawing
+        self.shock.advance(safe=not self.drawing
                           and self.grid[self.player_x][self.player_y] == FILLED)
         if not self._update_perimeter_threat():
             return
@@ -643,7 +684,7 @@ class Game:
                 self.enemy_vy = (self.enemy_vy / speed) * target_speed
 
         # 2. Sparo Missili
-        shot_interval = self.fuse.shot_interval(self.shoot_interval)
+        shot_interval = self.shock.shot_interval(self.shoot_interval)
         if shot_interval is not None and current_time - self.last_shot_time >= shot_interval:
             self.last_shot_time = current_time
             self._shoot_at_player()
@@ -691,10 +732,12 @@ class Game:
             for new_x, new_y in motion.cells:
                 is_safe_zone = self.grid[new_x][new_y] == FILLED
                 if self._player_motion_hits_hostile(new_x, new_y, is_safe_zone):
-                    self._handle_hostile_contact()
+                    self._handle_hostile_contact(center=((new_x + .5) * CELL_SIZE,
+                                                         (new_y + .5) * CELL_SIZE))
                     return
                 if self.drawing and (new_x, new_y) in self.current_trail[:-1]:
-                    self.handle_death()  # Autointersezione strutturale, non assorbibile.
+                    self.handle_death(center=((new_x + .5) * CELL_SIZE,
+                                              (new_y + .5) * CELL_SIZE))
                     return
                 if not self.drawing:
                     if is_safe_zone:
@@ -751,16 +794,19 @@ class Game:
 
         # 3. Disegna Giocatore
         px, py = self.player_x * CELL_SIZE, self.player_y * CELL_SIZE
+        show_death = (self.state == GameState.DYING
+                      or self.state == GameState.PAUSED and self._resume_state == GameState.DYING)
         
-        if self.cursor_img:
-            screen.blit(self.cursor_img, self.cursor_img.get_rect(
-                center=(px + CELL_SIZE // 2, py + CELL_SIZE // 2)))
-        else:
-            bounds = pygame.Rect((0, 0), self.player_sprite_size)
-            bounds.center = (px + CELL_SIZE // 2, py + CELL_SIZE // 2)
-            pygame.draw.rect(screen, COLOR_PLAYER, bounds)
+        if not show_death:
+            if self.cursor_img:
+                screen.blit(self.cursor_img, self.cursor_img.get_rect(
+                    center=(px + CELL_SIZE // 2, py + CELL_SIZE // 2)))
+            else:
+                bounds = pygame.Rect((0, 0), self.player_sprite_size)
+                bounds.center = (px + CELL_SIZE // 2, py + CELL_SIZE // 2)
+                pygame.draw.rect(screen, COLOR_PLAYER, bounds)
 
-        if self.shields.active or self.shields.grace_ticks:
+        if not show_death and (self.shields.active or self.shields.grace_ticks):
             shield = MANIFEST['shields']
             radius = math.ceil(math.hypot(*self.player_sprite_size) / 2) + shield['ring_padding']
             pygame.draw.circle(screen, shield['ring_color'],
@@ -783,13 +829,24 @@ class Game:
         for threat in self.perimeter_threats:
             self.threat_visual.draw(screen, threat.position, threat.velocity)
 
-        if self.fuse.warning and self.state in (GameState.PLAYING, GameState.CAPTURING):
-            color = (255, 80, 80) if self.fuse.active else (255, 195, 70)
-            if self.fuse.active:
-                message = STRINGS['fuse_active']
+        if show_death and self.death_sequence.center is not None:
+            sequence = self.death_sequence
+            center = tuple(round(value) for value in sequence.center)
+            frame = self.death_frames[sequence.frame_index]
+            if frame is not None:
+                screen.blit(frame, frame.get_rect(center=center))
             else:
-                seconds = (self.fuse.config.activation_ms - self.fuse.elapsed_ms + 999) // 1000
-                message = STRINGS['fuse_warning'].format(seconds=seconds)
+                # Mantiene durata e centro anche con un asset illeggibile.
+                radius = round(max(self.player_sprite_size) / 2) + sequence.frame_index
+                pygame.draw.circle(screen, MANIFEST['colors']['accent'], center, radius, 2)
+
+        if self.shock.warning and self.state in (GameState.PLAYING, GameState.CAPTURING):
+            color = (255, 80, 80) if self.shock.active else (255, 195, 70)
+            if self.shock.active:
+                message = STRINGS['shock_active']
+            else:
+                seconds = (self.shock.config.activation_ms - self.shock.elapsed_ms + 999) // 1000
+                message = STRINGS['shock_warning'].format(seconds=seconds)
             label = font.render(message, True, color)
             bounds = label.get_rect(center=(WIDTH // 2, 18))
             pygame.draw.rect(screen, (12, 12, 18), bounds.inflate(12, 8))

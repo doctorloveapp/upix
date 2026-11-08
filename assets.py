@@ -23,6 +23,29 @@ def load_sprite(path: Path, max_size, scale=1.0):
         return None, fallback
 
 
+def load_animation_frames(paths, reference_size, scale=1.0):
+    """Un'unica scala per l'intera sequenza, ancorata al primo frame valido.
+
+    Non normalizzare ogni fotogramma nel box: si perderebbe l'espansione
+    originale dell'esplosione. I frame mancanti mantengono la propria durata.
+    """
+    sources = []
+    for path in paths:
+        try:
+            sources.append(pygame.image.load(str(path)).convert_alpha())
+        except (pygame.error, OSError) as exc:
+            print(f'Fotogramma non disponibile ({path}): {exc}')
+            sources.append(None)
+    reference = next((source for source in sources if source is not None), None)
+    if reference is None:
+        return tuple(sources)
+    factor = min(reference_size[0] / reference.get_width(),
+                 reference_size[1] / reference.get_height()) * scale
+    return tuple(None if source is None else pygame.transform.scale(source, (
+        max(1, round(source.get_width() * factor)),
+        max(1, round(source.get_height() * factor)))) for source in sources)
+
+
 @lru_cache(maxsize=4)
 def _svg_png(path: str, modified_ns: int, font_path: str) -> bytes:
     # Import locale: un errore SVG non impedisce il caricamento dell'immagine primaria.

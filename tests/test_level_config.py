@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError, replace
 import unittest
 
 from level_config import LEVEL_CONFIGS, get_level_config
-from fuse import Fuse
+from shock_system import ShockSystem
 
 
 class LevelConfigTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class LevelConfigTests(unittest.TestCase):
                 self.assertLessEqual(current.victory_percent - previous.victory_percent, 2)
                 self.assertLessEqual(current.direction_interval_ms, previous.direction_interval_ms)
                 self.assertGreaterEqual(current.pursuit_weight, previous.pursuit_weight)
-                self.assertLess(current.fuse.activation_ms, previous.fuse.activation_ms)
+                self.assertLess(current.shock.activation_ms, previous.shock.activation_ms)
         self.assertEqual(LEVEL_CONFIGS[-1].victory_percent, 86)
         self.assertEqual(LEVEL_CONFIGS[-1].missile_speed, 5.3)
         self.assertEqual(LEVEL_CONFIGS[-1].missile_interval_ms, 750)
@@ -48,18 +48,18 @@ class LevelConfigTests(unittest.TestCase):
             with self.subTest(level=level), self.assertRaises(ValueError):
                 get_level_config(level)
 
-    def test_each_level_fuse_activates_on_first_tick_at_or_after_its_threshold(self):
+    def test_each_level_shock_activates_on_first_tick_at_or_after_its_threshold(self):
         for level, config in enumerate(LEVEL_CONFIGS, 1):
             with self.subTest(level=level):
-                fuse = Fuse(config.fuse)
-                ticks = (config.fuse.activation_ms * 60 + 999) // 1000
+                shock = ShockSystem(config.shock)
+                ticks = (config.shock.activation_ms * 60 + 999) // 1000
                 for _ in range(ticks - 1):
-                    fuse.advance(safe=True)
-                self.assertTrue(fuse.warning)
-                self.assertFalse(fuse.active)
-                fuse.advance(safe=True)
-                self.assertTrue(fuse.active)
-                self.assertEqual(fuse.shot_interval(config.missile_interval_ms),
+                    shock.advance(safe=True)
+                self.assertTrue(shock.warning)
+                self.assertFalse(shock.active)
+                shock.advance(safe=True)
+                self.assertTrue(shock.active)
+                self.assertEqual(shock.shot_interval(config.missile_interval_ms),
                                  config.missile_interval_ms // 2)
 
     def test_configs_are_immutable_and_invalid_parameters_are_rejected(self):

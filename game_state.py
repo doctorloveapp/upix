@@ -17,6 +17,7 @@ class GameState(Enum):
     NAME_ENTRY = auto()
     CAMPAIGN_COMPLETE = auto()
     PLAYING = auto()
+    DYING = auto()
     CAPTURING = auto()
     PAUSED = auto()
     LEVEL_CLEAR = auto()

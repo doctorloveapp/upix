@@ -12,7 +12,7 @@ non è stato modificato né pubblicato nulla sul sito.
 - Campagna desktop con menu iniziale, riepiloghi, Run Score, finale dopo il
   dodicesimo livello, scelta di nuovi cicli e nome per la classifica alla fine
   della partita. Aggiornamento 8 novembre: controller, cataloghi IT/EN, AABB
-  complete, scudi, vita extra e due micce dal livello 5 implementati sul desktop.
+  complete, scudi, vita extra e due scosse dal livello 5 implementati sul desktop.
   Sono ora disponibili anche lingua a caldo, premi combinati, avvio debug in
   memoria e playlist musicale scoperta automaticamente dal filesystem.
 - `JsonScoreStore`: `user_data/highscores.json`, UTF-8, versione e campagna,

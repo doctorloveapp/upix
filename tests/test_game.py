@@ -20,7 +20,7 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 import pygame
 import Upqix89 as upix
 from game_state import GameState
-from fuse import Fuse, FuseConfig
+from shock_system import ShockSystem, ShockConfig
 from perimeter_threat import PerimeterThreat
 from territory import plan_capture
 
@@ -41,6 +41,7 @@ class GameTests(unittest.TestCase):
             self.game = upix.Game(self.screen, time_source=lambda: self.now_ms)
 
     def tearDown(self):
+        self.game.cancel_death()
         self.game._resume_audio()
         self.game._stop_draw_audio()
         if pygame.mixer.get_init():
@@ -58,6 +59,14 @@ class GameTests(unittest.TestCase):
         self.step(pygame.K_RIGHT, 4)
         self.step(pygame.K_DOWN, 3)
         self.finish_capture()
+
+    def finish_death(self):
+        for _ in range(100):
+            if self.game.state != GameState.DYING:
+                return
+            self.now_ms += 17
+            self.game.advance_frame(collections.defaultdict(bool))
+        self.fail('La sequenza di morte non termina')
 
     def finish_capture(self):
         for _ in range(10_000):
@@ -116,6 +125,9 @@ class GameTests(unittest.TestCase):
         g.handle_death()
         self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
         self.assertFalse(g.draw_channel.get_busy())
+        self.assertEqual(g.state, GameState.DYING)
+        self.assertTrue(g.drawing)
+        self.finish_death()
         self.assertFalse(g.drawing)
         self.assertEqual(g.current_trail, [])
         self.assertEqual(g.missiles, [])
@@ -125,6 +137,8 @@ class GameTests(unittest.TestCase):
         self.game.lives = 1
         self.step(pygame.K_UP)
         self.game.handle_death()
+        self.assertEqual(self.game.state, GameState.DYING)
+        self.finish_death()
         self.assertTrue(self.game.game_over)
         self.assertFalse(self.game.drawing)
         self.assertFalse(self.game.draw_channel.get_busy())
@@ -135,6 +149,7 @@ class GameTests(unittest.TestCase):
         self.step(pygame.K_DOWN, 2)
         self.step(pygame.K_LEFT, 3)
         self.assertEqual(self.game.lives, upix.ENGINE['initial_lives'] - 1)
+        self.finish_death()
         self.assertFalse(self.game.drawing)
         self.assertFalse(self.game.draw_channel.get_busy())
 
@@ -189,6 +204,9 @@ class GameTests(unittest.TestCase):
         g.missiles = [{'x': 100, 'y': 100, 'vx': 100, 'vy': 0} for _ in range(2)]
         self.assertFalse(g._update_missiles())
         self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
+        self.assertEqual(g.state, GameState.DYING)
+        self.assertEqual(len(g.missiles), 1)  # Il secondo missile resta congelato.
+        self.finish_death()
         self.assertEqual(g.missiles, [])
 
     def test_new_player_segment_over_missile_causes_one_death_immediately(self):
@@ -325,8 +343,10 @@ class GameTests(unittest.TestCase):
         g.missiles = [{'x': 190, 'y': 201, 'vx': 40, 'vy': 0}]
         self.now_ms = 100
         self.assertEqual(g.advance_frame(collections.defaultdict(bool)), 1)
-        self.assertEqual(g.state, GameState.GAME_OVER)
+        self.assertEqual(g.state, GameState.DYING)
         self.assertEqual(g.game_clock.ticks, 1)
+        self.finish_death()
+        self.assertEqual(g.state, GameState.GAME_OVER)
         self.now_ms += 120_000
         with contextlib.redirect_stdout(io.StringIO()):
             g.start_level()
@@ -633,17 +653,17 @@ class GameTests(unittest.TestCase):
         g._shoot_at_player()
         self.assertEqual(g.missiles, [])
 
-    def test_fuse_counts_safe_movement_and_reduces_real_shot_interval(self):
+    def test_shock_counts_safe_movement_and_reduces_real_shot_interval(self):
         g = self.game
-        g.fuse = Fuse(FuseConfig(warning_ms=100, activation_ms=200))
+        g.shock = ShockSystem(ShockConfig(warning_ms=100, activation_ms=200))
         g.shoot_interval = 600
         keys = collections.defaultdict(bool, {pygame.K_RIGHT: True})
         for _ in range(11):
             g.update(keys)
-        self.assertFalse(g.fuse.active)
-        self.assertTrue(g.fuse.warning)
+        self.assertFalse(g.shock.active)
+        self.assertTrue(g.shock.warning)
         g.update(keys)
-        self.assertTrue(g.fuse.active)
+        self.assertTrue(g.shock.active)
         self.assertEqual(g.player_x, upix.COLS // 2 + 12)
         for _ in range(5):
             g.update(keys)
@@ -656,19 +676,21 @@ class GameTests(unittest.TestCase):
         self.step(pygame.K_UP, 3)
         self.assertTrue(g.drawing)
         g.update(collections.defaultdict(bool))
-        self.assertTrue(g.fuse.active)  # La partenza non neutralizza la pressione.
+        self.assertTrue(g.shock.active)  # La partenza non neutralizza la pressione.
         g.handle_death()
-        self.assertFalse(g.fuse.warning)
-        self.assertEqual(g.fuse.safe_ticks, 0)
+        self.assertEqual(g.state, GameState.DYING)
+        self.finish_death()
+        self.assertFalse(g.shock.warning)
+        self.assertEqual(g.shock.safe_ticks, 0)
 
-    def test_capture_disarms_fuse_and_hud_bonus_decays_with_level_time(self):
+    def test_capture_disarms_shock_and_hud_bonus_decays_with_level_time(self):
         g = self.game
-        g.fuse = Fuse(FuseConfig(warning_ms=0, activation_ms=100))
+        g.shock = ShockSystem(ShockConfig(warning_ms=0, activation_ms=100))
         for _ in range(6):
             g.update(collections.defaultdict(bool))
-        self.assertTrue(g.fuse.active)
+        self.assertTrue(g.shock.active)
         self.short_capture()
-        self.assertEqual(g.fuse.safe_ticks, 0)
+        self.assertEqual(g.shock.safe_ticks, 0)
         # Un taglio ampio produce un bonus ben visibile, soggetto al timer del livello.
         g.level_score.capture(12000)
         initial = g.hud_data()
@@ -683,25 +705,25 @@ class GameTests(unittest.TestCase):
             g.next_level()
         self.assertEqual(g.score, 0)
         self.assertEqual(g.hud_data().bonus, 0)
-        self.assertEqual(g.fuse.safe_ticks, 0)
+        self.assertEqual(g.shock.safe_ticks, 0)
 
-    def test_pause_capture_and_terminal_states_freeze_fuse_and_score(self):
+    def test_pause_capture_and_terminal_states_freeze_shock_and_score(self):
         g = self.game
         g.level_score.capture(12000)
         g.update(collections.defaultdict(bool))
         for state in (GameState.PAUSED, GameState.CAPTURING, GameState.LEVEL_CLEAR,
                       GameState.GAME_OVER, GameState.PHYSICS_ERROR):
             g._set_state(state)
-            before = (g.fuse.safe_ticks, g.score, g.hud_data().bonus, g.game_clock.ticks)
+            before = (g.shock.safe_ticks, g.score, g.hud_data().bonus, g.game_clock.ticks)
             self.now_ms += 120000
             g.update(collections.defaultdict(bool))
             g.draw()
-            self.assertEqual(before, (g.fuse.safe_ticks, g.score, g.hud_data().bonus,
+            self.assertEqual(before, (g.shock.safe_ticks, g.score, g.hud_data().bonus,
                                       g.game_clock.ticks))
 
-    def test_disabled_fuse_preserves_base_cadence_in_runtime(self):
+    def test_disabled_shock_preserves_base_cadence_in_runtime(self):
         g = self.game
-        g.fuse = Fuse(FuseConfig(enabled=False, warning_ms=0, activation_ms=100))
+        g.shock = ShockSystem(ShockConfig(enabled=False, warning_ms=0, activation_ms=100))
         g.shoot_interval = 600
         for _ in range(35):
             g.update(collections.defaultdict(bool))
@@ -709,7 +731,7 @@ class GameTests(unittest.TestCase):
         g.update(collections.defaultdict(bool))
         self.assertEqual(g.last_shot_time, 600)
         self.assertEqual(len(g.missiles), 1)
-        self.assertFalse(g.fuse.active)
+        self.assertFalse(g.shock.active)
 
     def test_player_sprite_is_centered_and_its_full_size_is_the_missile_hitbox(self):
         g = self.game
@@ -744,13 +766,13 @@ class GameTests(unittest.TestCase):
         self.assertAlmostEqual(body.height, 5.2)
         self.assertEqual(upix.MISSILE_RENDER_RADIUS, 4)  # 3 * 1,3, arrotondato al pixel.
 
-    def test_fuse_spawns_visible_separate_threat_only_at_activation(self):
+    def test_shock_spawns_visible_separate_threat_only_at_activation(self):
         g = self.game
-        g.fuse = Fuse(FuseConfig(warning_ms=100, activation_ms=200))
+        g.shock = ShockSystem(ShockConfig(warning_ms=100, activation_ms=200))
         keys = collections.defaultdict(bool)
         for _ in range(11):
             g.update(keys)
-        self.assertTrue(g.fuse.warning)
+        self.assertTrue(g.shock.warning)
         self.assertIsNone(g.perimeter_threat)
         g.update(keys)
         self.assertIsInstance(g.perimeter_threat, PerimeterThreat)
@@ -762,14 +784,16 @@ class GameTests(unittest.TestCase):
 
     def test_perimeter_contact_on_safe_border_loses_one_life_and_disarms(self):
         g = self.game
-        g.fuse.safe_ticks = g.fuse.config.activation_ms * 60 // 1000
+        g.shock.safe_ticks = g.shock.config.activation_ms * 60 // 1000
         route = g.perimeter_routes[0]
         distance = route.project(((g.player_x + .5) * 2, (g.player_y + .5) * 2))[1]
         g.perimeter_threat = PerimeterThreat(route, distance, speed_per_tick=2.5, body_size=(10, 10))
         g.update(collections.defaultdict(bool))
         self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
+        self.assertEqual(g.state, GameState.DYING)
+        self.finish_death()
         self.assertIsNone(g.perimeter_threat)
-        self.assertFalse(g.fuse.active)
+        self.assertFalse(g.shock.active)
         g.update(collections.defaultdict(bool))
         self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
 
@@ -782,11 +806,12 @@ class GameTests(unittest.TestCase):
         self.assertFalse(g._player_touches_perimeter_threat())
         self.step(pygame.K_RIGHT)
         self.assertEqual(g.lives, upix.ENGINE['initial_lives'] - 1)
+        self.finish_death()
         self.assertIsNone(g.perimeter_threat)
 
     def test_threat_freezes_on_pause_capture_and_terminal_states(self):
         g = self.game
-        g.fuse.safe_ticks = g.fuse.config.activation_ms * 60 // 1000
+        g.shock.safe_ticks = g.shock.config.activation_ms * 60 // 1000
         self.assertTrue(g._update_perimeter_threat())
         threat = g.perimeter_threat
         before = threat.distance, threat.velocity
@@ -804,7 +829,7 @@ class GameTests(unittest.TestCase):
     def test_capture_rebuilds_boundary_and_disarms_threat_atomically(self):
         g = self.game
         old_routes = g.perimeter_routes
-        g.fuse.safe_ticks = g.fuse.config.activation_ms * 60 // 1000
+        g.shock.safe_ticks = g.shock.config.activation_ms * 60 // 1000
         g._update_perimeter_threat()
         self.step(pygame.K_UP, 3)
         self.step(pygame.K_RIGHT, 4)
@@ -813,7 +838,7 @@ class GameTests(unittest.TestCase):
         self.assertIs(g.perimeter_routes, old_routes)
         self.finish_capture()
         self.assertIsNone(g.perimeter_threat)
-        self.assertFalse(g.fuse.active)
+        self.assertFalse(g.shock.active)
         self.assertNotEqual(g.perimeter_routes, old_routes)
         self.assertEqual(len(g.perimeter_routes[0].vertices), 8)
         with contextlib.redirect_stdout(io.StringIO()):
@@ -821,7 +846,7 @@ class GameTests(unittest.TestCase):
         self.assertIsNone(g.perimeter_threat)
         self.assertEqual(len(g.perimeter_routes[0].vertices), 4)
 
-    def test_fuse_and_bonus_match_across_render_rates_after_activation(self):
+    def test_shock_and_bonus_match_across_render_rates_after_activation(self):
         snapshots = []
         keys = collections.defaultdict(bool)
         for fps in (30, 60, 144):
@@ -829,15 +854,15 @@ class GameTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 g = upix.Game(self.screen, time_source=lambda: self.now_ms,
                               rng=random.Random(1989))
-            g.fuse = Fuse(FuseConfig(warning_ms=500, activation_ms=1000))
+            g.shock = ShockSystem(ShockConfig(warning_ms=500, activation_ms=1000))
             g.level_score.capture(12000)
             try:
                 for frame in range(1, fps * 4 + 1):
                     self.now_ms = frame * 1000 // fps
                     g.advance_frame(keys)
                     g.draw()
-                self.assertTrue(g.fuse.active)
-                snapshots.append((g.game_clock.ticks, g.fuse.safe_ticks, g.score,
+                self.assertTrue(g.shock.active)
+                snapshots.append((g.game_clock.ticks, g.shock.safe_ticks, g.score,
                                   g.hud_data().bonus, g.last_shot_time, g.missiles,
                                   g.enemy_x, g.enemy_y, g.rng.getstate(),
                                   g.perimeter_threat.distance, g.perimeter_threat.velocity))

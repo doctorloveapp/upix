@@ -88,6 +88,14 @@ class CampaignAppTests(unittest.TestCase):
             self.press(pygame.K_RETURN)
         self.press(pygame.K_RETURN)
 
+    def finish_death(self):
+        for _ in range(100):
+            if self.app.game.state != GameState.DYING:
+                return
+            self.now += 17
+            self.app.advance(InputFrame())
+        self.fail('La sequenza di morte non termina')
+
     def test_boot_is_menu_and_arrow_navigation_does_not_start_simulation(self):
         self.assertEqual(self.app.state, GameState.MENU)
         self.app.advance()
@@ -129,6 +137,8 @@ class CampaignAppTests(unittest.TestCase):
         expected = game.run_score
         game.lives = 1
         game.handle_death()
+        self.assertEqual(self.app.state, GameState.DYING)
+        self.finish_death()
         self.app.advance()
         self.assertEqual(self.app.state, GameState.NAME_ENTRY)
         self.app.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='Lukso'))
@@ -191,6 +201,7 @@ class CampaignAppTests(unittest.TestCase):
         self.continue_level()
         game.lives = 1
         game.handle_death()
+        self.finish_death()
         self.app.advance()
         self.app.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='Looper'))
         self.press(pygame.K_RETURN)
@@ -266,12 +277,27 @@ class CampaignAppTests(unittest.TestCase):
         for death in range(1, 16):
             with contextlib.redirect_stdout(io.StringIO()):
                 game.handle_death()
+            self.assertEqual(self.app.state, GameState.DYING)
+            self.finish_death()
             self.app.advance(InputFrame())
             self.assertEqual(self.app.hud_data().lives, 15 - death)
             self.assertEqual(self.app.state, GameState.PLAYING if death < 15 else GameState.NAME_ENTRY)
         self.assertTrue(game.game_over)
         self.assertEqual(game.lives, 0)
         self.app.draw()
+
+    def test_menu_cancels_explosion_and_next_run_has_no_pending_death(self):
+        game = self.start()
+        with contextlib.redirect_stdout(io.StringIO()):
+            game.handle_death()
+        self.assertEqual(self.app.state, GameState.DYING)
+        self.app._menu()
+        self.assertFalse(game.death_sequence.active)
+        self.assertFalse(game.death_channel.get_busy())
+        replacement = self.start()
+        self.assertEqual(replacement.state, GameState.PLAYING)
+        self.assertFalse(replacement.death_sequence.active)
+        self.assertEqual(replacement.lives, MANIFEST['engine']['initial_lives'])
 
     def test_language_menu_switches_immediately_without_starting_the_game(self):
         original = I18N.language

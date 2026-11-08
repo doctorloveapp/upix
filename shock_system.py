@@ -1,4 +1,4 @@
-"""Miccia deterministica: pressione per permanenza in territorio sicuro."""
+"""Scossa deterministica: pressione per permanenza in territorio sicuro."""
 
 from dataclasses import dataclass
 
@@ -6,7 +6,7 @@ from game_state import SIMULATION_HZ
 
 
 @dataclass(frozen=True, slots=True)
-class FuseConfig:
+class ShockConfig:
     enabled: bool = True
     warning_ms: int = 8000
     activation_ms: int = 12000
@@ -17,20 +17,20 @@ class FuseConfig:
             raise ValueError("enabled deve essere booleano")
         if (type(self.warning_ms) is not int or type(self.activation_ms) is not int
                 or not 0 <= self.warning_ms < self.activation_ms):
-            raise ValueError("Soglie Miccia non valide")
+            raise ValueError("Soglie Scossa non valide")
         if (type(self.shot_interval_percent) is not int
                 or not 1 <= self.shot_interval_percent <= 100):
-            raise ValueError("Percentuale intervallo Miccia non valida")
+            raise ValueError("Percentuale intervallo Scossa non valida")
 
 
-class Fuse:
+class ShockSystem:
     """Conta solo i tick sicuri. Uscire dal bordo sospende, senza disinnescare.
 
     Il chiamante avanza una volta per tick PLAYING e resetta a conquista/morte.
     Nessun timer reale, input, RNG o dipendenza dal rendering.
     """
 
-    def __init__(self, config: FuseConfig):
+    def __init__(self, config: ShockConfig):
         self.config = config
         self.reset()
 

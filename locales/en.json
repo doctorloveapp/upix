@@ -24,8 +24,8 @@
   "physics_title": "PHYSICS HALTED - R: restart level",
   "physics_details": "Invalid geometry. See the technical log for details.",
   "capture": "Closing territory...",
-  "fuse_active": "PERIMETER SHOCK! Capture to disarm",
-  "fuse_warning": "FUSE {seconds}s: leave the edge and capture!",
+  "shock_active": "PERIMETER SHOCK! Capture to disarm",
+  "shock_warning": "SHOCK {seconds}s: leave the edge and capture!",
   "run_score": "RUN SCORE  {score:09d}",
   "completed_levels": "LEVELS COMPLETED  {levels}",
   "summary_capture": "CAPTURED  {percent:.1f}%   LIVES  {lives}",
@@ -57,7 +57,7 @@
     "Start with {lives} lives. Win with at least {extra}%: one extra life.",
     "A single cut claiming at least {shield}% of the field earns a shield.",
     "Space / X: pink shield, protects from one enemy contact.",
-    "From level 5, two fuses travel in opposite directions. Move!",
+    "From level 5, two shocks travel in opposite directions. Move!",
     "After level 12: save or continue a harder cycle."
   ],
   "cycle_options": [
@@ -75,7 +75,7 @@
   "hint_07": "Stay on the frontier and keep your next safe exit in sight.",
   "hint_08": "Missiles are faster: avoid long exposed cuts.",
   "hint_09": "A shield absorbs one contact, but cannot repair a crossed line.",
-  "hint_10": "Fuses activate earlier. Capture territory to reset them.",
+  "hint_10": "Shocks activate earlier. Capture territory to reset them.",
   "hint_11": "Look for a broad capture that clears the victory threshold.",
   "hint_12": "Finish the campaign, then save or try a harder cycle.",
   "hud_lives_shields": "{lives}/{shields}",

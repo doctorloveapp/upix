@@ -88,6 +88,7 @@ class CampaignApp:
             self.game._resume_audio()
             self.game._stop_draw_audio()
             self.game._cancel_capture()
+            self.game.cancel_death()
         if pygame.mixer.get_init():
             pygame.mixer.music.stop()
         self.game = None

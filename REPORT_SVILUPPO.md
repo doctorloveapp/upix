@@ -10,7 +10,7 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 - Il piano generale è approvato. **Collisioni Fase 1 estese ai missili**;
   Fase 2 con stati, pausa, **tempo fisso 60 Hz e cattura cooperativa implementati**.
   Completata la **vertical slice dei primi tre livelli**, con parametri e sprite distinti.
-  **Fase 4 implementata**: player 2×, Miccia separata e punteggio area/tempo.
+  **Fase 4 implementata**: player 2×, Scossa separata e punteggio area/tempo.
   **Fase 5 implementata**: Run Score, riepilogo e finale della campagna.
   **Fase 6 desktop implementata**: menu iniziale e classifica personale persistente.
   Implementati controller/deadzone, i18n IT/EN, dodici boss distinti, hitbox player
@@ -38,11 +38,11 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   attraversare l'interno conquistato. **5 vite**, vita extra con vittoria ≥74%,
   **scudo per singola conquista ≥25% del campo**; Spazio/X per equipaggiarlo.
   **Proiettili al 130%**: AABB **5,2×5,2**, raggio nominale 3,9 arrotondato a 4 px.
-  **Miccia** configurabile: preavviso e dimezzamento dell'intervallo spari dopo
+  **Scossa** configurabile: preavviso e dimezzamento dell'intervallo spari dopo
   permanenza prolungata in zona sicura, più **una scossa nei livelli 1–4 e due
   in versi opposti nei livelli 5–12**; velocità da 150 a 260 px/s nel ciclo 1.
   Attivazione da 12 a 7,6 s. Conquista/morte le disinnescano; scudo assorbe un contatto.
-  Scossa e missili usano `public/icon/miccia.png`, orientato nel verso del moto.
+  Scossa e missili usano `public/icon/shock.png`, orientato nel verso del moto.
   **SCORE/BONUS/TEMPO** nell'HUD: base permanente e bonus di area che scade.
 - Musica normale **0,26**, musica durante il disegno **0,155**, effetto saldatrice
   **0,80**. L'ultima richiesta dimezza la riduzione precedente, da 0,21 a 0,105:
@@ -50,13 +50,16 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
   `DRAW_MUSIC_ATTENUATION = 0.105`; il volume attenuato è calcolato da quello normale.
 - Menu con cambio lingua IT/EN immediato, overlay debug nascosto con avvio
   personalizzato solo in memoria; premi vita/scudo mostrati insieme a fine livello.
+- Morte con stato temporaneo **DYING**, sette fotogrammi di esplosione e audio
+  dedicato; fisica e tempo congelati per **700 ms**, poi respawn o Game Over.
+  Il rilascio della direzione resta richiesto dopo il respawn.
 - Musica scoperta da `public/music` all'avvio, shuffle senza ripetizioni nel
   giro e alla giunzione fra giri, con RNG separato dalla simulazione.
-- **233 test superati**, compresi contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
+- **248 test superati**, compresi animazione di morte, contabilità vite/respawn, debug, shuffle, lingua a caldo, premi combinati,
   input/controller, i18n, frontiera, scudi,
   vite extra, salvataggio oltre 12 livelli, scossa, contorni frammentati, sprite orientati,
   menu, campagna completa, classifica JSON/browser,
-  manifest, nuove dimensioni, Miccia, punteggio, progressione dei dodici livelli,
+  manifest, nuove dimensioni, Scossa, punteggio, progressione dei dodici livelli,
   AABB player completa, configurazioni, cattura a budget diversi,
   cancellazione/pausa, HUD esterno, loop, determinismo a FPS diversi e collisioni.
   Verifica visiva IT/EN di menu, tutorial, gioco, premio scudo, riepilogo e finale.
@@ -65,7 +68,113 @@ e Technical Lead. Obiettivo: consolidamento verso Release Candidate.
 - Ambiente verificato: Windows, Python **3.13.5**, Pygame **2.6.1**,
   `resvg_py` **0.5.0**. Dipendenze dichiarate in `requirements.txt`.
 
-## Consegna corrente — Audit vite e correzione respawn (8 novembre 2026)
+## Consegna corrente — Scossa/Shock e DeathSequence (8 novembre 2026)
+
+### Nomenclatura unificata
+
+La meccanica anti-attesa si chiama **Scossa** in italiano e **Shock** in inglese.
+Aggiornati preavviso, avviso attivo sul campo/HUD, tutorial, suggerimenti, sorgenti,
+test, README, report e documentazione web. Il modulo è ora `shock_system.py`,
+con `ShockSystem` e `ShockConfig`; `Game.shock`, `LevelConfig.shock`, i record
+`levels[].shock`, `minimum_shock_ms` e le chiavi i18n `shock_warning`/`shock_active`
+usano la stessa nomenclatura. Tutti i consumatori interni sono stati aggiornati
+insieme, senza alias duplicati. Nessun parametro di difficoltà è stato variato.
+
+Rinominato anche lo sprite energia condiviso in **public/icon/shock.png**,
+con aggiornamento del manifest e delle regressioni: contenuto grafico invariato.
+Il manifest distribuito è la versione da usare con il codice aggiornato; anche
+eventuali profili esterni devono rispettare le nuove chiavi. Il fingerprint del
+manifest viene ricalcolato automaticamente, come per ogni variazione della configurazione.
+
+### Macchina a stati della morte: codice implementato
+
+Flusso: **PLAYING → DYING → PLAYING oppure GAME_OVER**. `handle_death()`
+memorizza il centro logico dell'impatto, avvia `DeathSequence`, entra in `DYING`,
+sospende musica/saldatrice, riproduce l'esplosione e soltanto dopo decrementa
+una vita. La guardia sullo stato rifiuta contatti ripetuti durante la sequenza:
+un'unica esplosione, un unico avvio audio, un unico decremento. Con l'ultima
+vita il contatore arriva a zero in DYING; la schermata Game Over e l'inserimento
+del nome attendono la conclusione dell'animazione.
+
+`death_sequence.py` contiene una macchina temporale indipendente da SDL,
+fisica e RNG. Il normale accumulatore viene azzerato alla transizione e durante
+DYING avanza esclusivamente i tick di presentazione dell'esplosione. Il clock
+del livello non avanza: boss, proiettili, scossa, scudi, scia, bonus e tempo
+restano fermi. Scia ed entità sono mantenute visibili, senza pulizia anticipata.
+Alla fine del settimo fotogramma `_finish_death()` esegue un solo commit:
+annulla il taglio, rimuove missili/scosse, ripristina lo stato degli scudi,
+quindi torna all'ultimo punto sicuro oppure entra in Game Over.
+
+L'uscita da DYING azzera nuovamente il credito: nessun recupero del tempo speso
+nell'esplosione. Dopo il respawn rimane la protezione introdotta nell'audit vite:
+rilasciare la direzione e premere di nuovo per muoversi. Da quel momento il mondo
+avanza normalmente, anche mentre il player attende il rilascio.
+
+P o perdita del focus sospendono anche l'animazione e il suo audio; riprendere
+torna allo stesso fotogramma, senza riavviare il campione. Menu, chiusura e
+inizializzazione di un nuovo quadro annullano eventuali sequenze pendenti.
+
+### Asset, scala e audio
+
+I sette file **cursor_lukso_death1.png … cursor_lukso_death7.png** vengono
+precaricati all'avvio del Game. Nessuna lettura di file o trasformazione grafica
+avviene al momento dell'impatto. `load_animation_frames()` calcola un fattore
+uniforme dal primo fotogramma e dalle dimensioni effettive del player (**26×30**),
+applicandolo all'intera sequenza: alpha e proporzioni restano corretti e
+l'espansione originale non viene annullata ridimensionando ogni frame nello
+stesso box. Il primo fotogramma misura **25×30**, il più ampio **33×36**.
+Il centro è sempre quello logico dell'impatto; nelle collisioni durante un passo
+del player viene passata la cella del contatto. Il cursore normale è nascosto e
+l'esplosione è composta sopra le altre entità congelate. Le AABB attive restano
+quelle degli sprite di gioco: l'animazione non introduce un nuovo corpo fisico.
+
+Configurazione centralizzata nel manifest:
+
+- `assets.death_frames`: elenco ordinato dei sette PNG.
+- `assets.death_sound`: **icon/death_sequence/esplosione.mp3**.
+- `death_sequence.frame_duration_ms`: **100 ms**, cioè 6 tick per fotogramma
+  a 60 Hz; totale **42 tick / 700 ms**. Per durate non allineate al tick si
+  arrotonda per eccesso, senza abbreviare l'ultimo frame.
+- `death_sequence.sprite_scale`: **1,0**, moltiplicatore della scala del player.
+- `death_sequence.sound_volume`: **0,85**.
+
+Canale 0 riservato alla saldatrice, canale 1 all'esplosione. Il suono parte
+all'ingresso in DYING, una sola volta, senza dipendere dal rendering. La musica
+è sospesa per tutta l'animazione e riprende all'uscita. Il campione MP3 dura
+circa **2,116 s** e può terminare naturalmente dopo il respawn: la pausa di gioco
+segue la durata configurata dei sette frame, senza dipendere dal dispositivo audio.
+Una nuova morte sostituisce il suono sullo stesso canale; menu e nuovo quadro
+lo fermano. Asset mancanti o corrotti producono diagnostica e fallback visivo
+per lo stesso numero di frame; audio assente mantiene invariata la sequenza.
+
+### Verifiche e limiti
+
+**248 test superati in 76,855 s** con
+`.venv\Scripts\python.exe -m unittest discover -s tests -q`.
+Aggiunti **15 test**, di cui dodici nel nuovo `tests/test_death_sequence.py`.
+Verificati tutti i sette indici e durata completa dell'ultimo frame, inizio
+sequenza/audio prima del decremento, contatto ripetuto senza perdite aggiuntive,
+zero vite senza Game Over anticipato, congelamento di entità/clock/bonus/RNG,
+pausa/ripresa, reset dell'accumulatore, cancellazione al menu/nuovo livello,
+scala condivisa e centro, fallback asset, validazione manifest e nomenclatura IT/EN.
+La morte a **30/60/144 FPS** mostra tutti i frame e lo stesso stato finale.
+Controllati visivamente i sette frame (ingranditi per ispezionare alpha e
+proporzioni) e la composizione dell'esplosione nel viewport **1024×768**.
+Le regressioni precedenti sulle vite sono adeguate alla transizione temporanea:
+prima verificano DYING, poi attendono la conclusione prima di controllare il respawn.
+
+La durata è deterministica in tick; sotto stalli oltre il budget il motore
+scarta il debito eccedente come per la fisica, quindi la presentazione può
+durare più a lungo nel tempo reale. Nessun test dummy certifica ascolto,
+latenza hardware o fluidità sul monitor. Le fasi completate restano confermate;
+questa consegna implementa il feedback di morte e la nomenclatura per la release.
+Nessuna operazione Git eseguita.
+
+## Consegna precedente — Audit vite e correzione respawn (8 novembre 2026)
+
+Sezione storica: descrive il respawn immediato allora implementato. La consegna
+Scossa/Shock e DeathSequence aggiunge ora l'intervallo congelato DYING prima del
+respawn; contabilità vite e requisito di rilascio restano validi.
 
 ### Problema riprodotto e causa
 
@@ -106,7 +215,7 @@ con certezza assoluta ogni evento a questo scenario.
   l'adattatore tastiera esistente; sul controller il neutro segue la deadzone
   dell'InputManager. Nessuna lettura hardware nel tick fisico.
 - Il requisito di rilascio riguarda soltanto il movimento del player: boss,
-  proiettili, tempo e Miccia continuano ad avanzare. La scossa può ancora
+  proiettili, tempo e Scossa continuano ad avanzare. La scossa può ancora
   colpire un giocatore fermo sul bordo; il respawn non introduce invulnerabilità.
 - Avviso visibile IT/EN sul campo: rilasciare la direzione e premere di nuovo.
   La pausa conserva il requisito; `start_level()` lo elimina per il nuovo quadro.
@@ -342,7 +451,7 @@ del rettangolo dello sprite, come richiesto per una AABB, non una maschera alpha
 | Boss 12 | 1484×1060 | 134×97 |
 
 `Game._player_body()` è l'unica AABB del player: sostituisce cella 2×2 e vecchio
-margine nei contatti con boss, missili e micce. Restano le regole di protezione
+margine nei contatti con boss, missili e scosse. Restano le regole di protezione
 del territorio sicuro da boss/missili; durante il taglio è vulnerabile l'intero
 sprite. La proiezione grafica 800×600→viewport non modifica la geometria logica.
 Gli asset originali non sono stati alterati.
@@ -387,8 +496,8 @@ La carica arriva solo dopo il commit riuscito, mai durante una cattura cancellat
 
 **Spazio / X** equipaggia una carica disponibile; il cerchio rosa circoscrive
 lo sprite. La carica resta conteggiata nell'inventario fino al primo contatto
-ostile, poi si consuma. Boss, missili e micce passano da un gestore comune del
-contatto. **500 ms di grazia** impediscono che lo stesso urto o due micce
+ostile, poi si consuma. Boss, missili e scosse passano da un gestore comune del
+contatto. **500 ms di grazia** impediscono che lo stesso urto o due scosse
 sovrapposte causino immediatamente anche la perdita di una vita. Durante la
 grazia resta visibile l'anello di protezione residua.
 
@@ -405,9 +514,9 @@ riepilogo: Invio/A lo chiude, una seconda conferma prosegue al livello successiv
 Il pannello superiore mostra **VITE/SCUDI**, per esempio **5/2**, e il footer
 riporta anche scudi, punti, bonus, tempo e ciclo. Immagine cornice preservata.
 
-### Due micce e progressione
+### Due scosse e progressione
 
-| Livello del ciclo 1 | Micce | Velocità | Attivazione |
+| Livello del ciclo 1 | Scosse | Velocità | Attivazione |
 | --- | ---: | ---: | ---: |
 | 1 | 1 | 150 px/s | 12 s |
 | 4 | 1 | 180 px/s | 10,8 s |
@@ -415,7 +524,7 @@ riporta anche scudi, punti, bonus, tempo e ciclo. Immagine cornice preservata.
 | 12 | 2 | 260 px/s | 7,6 s |
 
 Le due entità partono dal punto opposto al player sul medesimo contorno e si
-separano in versi **fissi +1/-1**, mantenendoli durante tutto il giro. Una miccia
+separano in versi **fissi +1/-1**, mantenendoli durante tutto il giro. Una scossa
 singola continua a inseguire per il percorso più breve. `perimeter_threats` è
 la sorgente unica delle entità; `perimeter_threat` rimane una vista compatibile
 del primo elemento per strumenti/test esistenti. Restano contorni compressi,
@@ -424,7 +533,7 @@ urti continui ai corner, pausa/cattura congelate e reset dopo conquista/morte.
 Profili `LevelConfig`: `perimeter_threat_count` e `perimeter_speed_px_per_second`.
 Il vecchio parametro globale di velocità è sostituito da
 `perimeter_threat.speed_multiplier=1.0`, moltiplicatore esplicito dei profili.
-Le soglie della Miccia sono già distinte nei dodici record del manifest.
+Le soglie della Scossa sono già distinte nei dodici record del manifest.
 
 ### Internazionalizzazione e tutorial
 
@@ -456,21 +565,21 @@ così non divergono modificando il bilanciamento.
    sono indicizzati per coppia `(ciclo, livello)`, senza sovrascrivere il ciclo
    precedente. Totali e conteggio sono mantenuti incrementalmente in O(1).
 3. Si ricreano campo, immagini, boss e velocità iniziale del profilo. **Timer del
-   livello, scia, missili, micce, conteggio Miccia, bonus/punti correnti, timer AI,
+   livello, scia, missili, scosse, conteggio Scossa, bonus/punti correnti, timer AI,
    equipaggiamento e grazia ripartono da zero**. Si riprende la musica del livello 1.
    Il generatore RNG mantiene la sequenza del run, senza un nuovo seme dal tempo reale.
 4. Si applica il modificatore del ciclo ai profili base, senza alterare griglia o
-   hitbox: **+15% velocità per ciclo, massimo 200%** per boss, missili e micce;
-   intervalli spari e attivazione Miccia **−10 punti percentuali per ciclo,
+   hitbox: **+15% velocità per ciclo, massimo 200%** per boss, missili e scosse;
+   intervalli spari e attivazione Scossa **−10 punti percentuali per ciclo,
    minimo 40%** del profilo; pavimenti di **300 ms** per gli spari e **3000 ms**
    per l'attivazione. Conquista richiesta **+2 punti per ciclo, massimo 90%**.
-   Il livello 1 del ciclo 2 ha quindi boss **1,84 px/tick**, miccia **172,5 px/s**,
+   Il livello 1 del ciclo 2 ha quindi boss **1,84 px/tick**, scossa **172,5 px/s**,
    attivazione **10,8 s** e soglia vittoria **72%**. Il ciclo ricalcola dal profilo
    base: non moltiplica ripetutamente i valori già scalati.
 5. La curva interna 1–12 ricomincia: il primo livello del nuovo ciclo può essere
    più lento del dodicesimo appena concluso, ma è più difficile dello stesso
    livello nel ciclo precedente. I limiti evitano crescita illimitata della
-   velocità/costo del solver. Restano una miccia nei livelli 1–4 e due dal 5.
+   velocità/costo del solver. Restano una scossa nei livelli 1–4 e due dal 5.
 6. **Registra e termina** apre l'inserimento nome e salva il Run Score totale nel
    JSON locale. Anche un Game Over nei cicli successivi salva tutti i livelli
    completati, per esempio 13 dopo il primo livello del ciclo 2; `completed`
@@ -501,10 +610,10 @@ urto assorbito senza modificare la griglia, due versi opposti, tracciamento di
 tutte le celle anche ad alta velocità, svolta sicura attorno agli angoli,
 assenza di letture hardware dal tick, deadzone/hotplug tramite dispositivi
 simulati, conteggio e salvataggio reale JSON di 13 risultati. Una simulazione
-di nove secondi con due micce e consumo dello scudo coincide a **30/60/144 FPS**.
+di nove secondi con due scosse e consumo dello scudo coincide a **30/60/144 FPS**.
 
 Verifica visiva SDL dummy IT/EN: menu, tutorial, pannelli cornice, partita con
-due micce e anello, icona/premio scudo, riepilogo con vita extra e scelta del ciclo.
+due scosse e anello, icona/premio scudo, riepilogo con vita extra e scelta del ciclo.
 I test/screenshot usano file temporanei e non creano risultati fittizi nel
 salvataggio personale. Controller fisico, audio reale e playtest prolungato
 restano da collaudare sul dispositivo dell'utente.
@@ -516,7 +625,7 @@ taglio x=160 px **16 frame**, massimo **6,568 ms**. Lavoro di cattura massimo
 tool aggiornato da 120 a 160 px per contenere interamente il boss attuale.
 
 Profilo CPU livello 12, seme 1989, 20 tick di riscaldamento e 240 campioni,
-tick + Game.draw + viewport + HUD, due micce attive. Player fermo con grazia
+tick + Game.draw + viewport + HUD, due scosse attive. Player fermo con grazia
 artificiale nella sola diagnostica, per impedire che una morte interrompa il
 profilo. Ciclo 1: mediana **5,550 ms**, P95 **7,289 ms**, massimo **10,378 ms**.
 Ciclo 8, già al tetto 200% velocità: **8,725 / 10,290 / 13,649 ms**.
@@ -525,13 +634,13 @@ monitor/hardware reale o con contorni/scie estremi. Nessuna operazione Git.
 
 ## Storico — Scossa sul perimetro e sprite energia (7 novembre 2026)
 
-La sezione seguente descrive la prima miccia fisica; hitbox player, quantità,
+La sezione seguente descrive la prima scossa fisica; hitbox player, quantità,
 progressione, localizzazione e flusso dopo il livello 12 sono stati aggiornati
 dalla consegna dell'8 novembre.
 
 ### Comportamento implementato
 
-La Miccia mantiene soglie, conteggio dei tick sicuri e incremento degli spari
+La Scossa mantiene soglie, conteggio dei tick sicuri e incremento degli spari
 precedenti. Il preavviso resta ambrato con conto alla rovescia. All'attivazione
 viene creata **una PerimeterThreat**, separata dalla lista dei missili, e il
 messaggio diventa «SCOSSA SUL BORDO! Conquista per disinnescare».
@@ -559,7 +668,7 @@ La semplice tangenza non è un urto, coerentemente con `collisions.AABB`.
 
 PAUSED, CAPTURING e stati terminali congelano la scossa. Una conquista riuscita,
 una morte e l'avvio del livello la eliminano; la conquista azzera anche la
-Miccia. Nessuna fisica aggiuntiva viene eseguita dal renderer.
+Scossa. Nessuna fisica aggiuntiva viene eseguita dal renderer.
 
 ### Contorni senza BFS e commit cooperativo
 
@@ -587,7 +696,7 @@ sceglie quello più vicino al player; non salta fra contorni durante la caccia.
 
 ### Sprite condiviso e configurazione
 
-**miccia.png** attuale: **1261×1247**, alpha presente. Il file originale non è
+**shock.png** attuale: **1261×1247**, alpha presente. Il file originale non è
 stato alterato. Nuovo **sprite_renderer.py**, con `DirectionalSprite`: carica
 lo sprite una volta per taglia, mantiene proporzioni/trasparenza e lo centra
 sulla posizione logica. I missili usano il medesimo asset nel box **8×8**,
@@ -661,7 +770,7 @@ logica esistente di area/tempo. `Game.run_score` è invece il totale dei risulta
 conclusi più il punteggio corrente, escludendolo quando è già consolidato.
 L'HUD mostra quest'ultimo. Il bonus già acquisito alla vittoria non decade nel
 livello successivo; il bonus del livello in corso mantiene la scadenza precedente.
-`start_level()` azzera soltanto contatori del nuovo livello, Miccia e clock,
+`start_level()` azzera soltanto contatori del nuovo livello, Scossa e clock,
 conservando registro di campagna e vite. Una nuova campagna crea un nuovo Game.
 
 La schermata **Riepilogo Livello** compare sulla primaria completata, con sfondo
@@ -719,7 +828,7 @@ pubblica verificata.
 Nuovo **game_manifest.json**, letto da `manifest.py` con validazione e struttura
 ricorsivamente immutabile. I dodici profili sono documenti espliciti: non vengono
 più derivati da CAMPAIGN_BALANCE o dal numero del livello. Ogni record contiene
-anche primaria, copertura, sprite, box base e scala, musica, Miccia e score.
+anche primaria, copertura, sprite, box base e scala, musica, Scossa e score.
 
 Il manifest centralizza dimensioni logiche/finestra/celle, vite iniziali, timing,
 budget di cattura, proiettili, player, asset e percorsi, volumi, controlli, testi
@@ -795,14 +904,14 @@ retry, formato JSON/Unicode, classifica ordinata e limitata, dati corrotti,
 scrittura atomica fallita, storage browser, manifest e proiettili scalati.
 Le regressioni del muro 200–201 px hanno partenze aggiornate per il corpo più
 grande; controllano ancora rimbalzo, residuo e non attraversamento. Restano
-superati determinismo a FPS diversi, Miccia, score/bonus, catture e audio.
+superati determinismo a FPS diversi, Scossa, score/bonus, catture e audio.
 
 Verificati visivamente menu, gioco, riepilogo, nome e classifica con driver SDL
 dummy. La prova della persistenza ha scritto solo in directory temporanee,
 senza produrre classifiche fittizie nel percorso reale dell'utente.
 
 Profilazione CPU isolata, 20 frame di riscaldamento e 120 misure, boss ingranditi,
-Miccia attiva, player fermo al sicuro; include tick, rendering, cornice e HUD:
+Scossa attiva, player fermo al sicuro; include tick, rendering, cornice e HUD:
 
 | Profilo | Mediana | P95 | Massimo |
 | --- | ---: | ---: | ---: |
@@ -828,19 +937,19 @@ consegna precedente; per lo stato attuale fanno fede manifest e sezione sopra.
   Nessuna dimensione grafica entra nelle collisioni: missile/player resta a una
   cella 2×2, boss/player conserva il margine preesistente di 2 px. Il boss
   continua a usare un unico `boss_size` per sprite e AABB identici.
-- `fuse.py`: modulo logico senza Pygame/RNG/tempo reale, con `FuseConfig`
+- `shock_system.py`: modulo logico senza Pygame/RNG/tempo reale, con `ShockConfig`
   immutabile e validata. `advance(safe=...)` viene chiamato una volta per tick
   PLAYING. Conta qualsiasi cella FILLED, anche muovendosi: camminare lungo il
-  perimetro non elude la Miccia. Si ferma durante i tagli, senza perdere il
+  perimetro non elude la Scossa. Si ferma durante i tagli, senza perdere il
   conteggio o spegnere la pressione; reset dopo commit di cattura, morte e nuovo
   livello. Pausa, CAPTURING e stati terminali non consumano tempo.
-- Preavviso visivo ambrato con conto alla rovescia, poi avviso rosso di Miccia
+- Preavviso visivo ambrato con conto alla rovescia, poi avviso rosso di Scossa
   attiva. Nel livello 1: **8 s / 12 s**; nel livello 12: **5,25 s / 7,6 s**.
   La cadenza attiva usa `base_ms * shot_interval_percent // 100` (minimo 1 ms),
   con valore predefinito 50: doppia frequenza, senza cambiare velocità o mira.
   La scadenza si riferisce all'ultimo sparo, con massimo un lancio per tick,
   senza recuperi a raffica. Soglie non allineate si attivano al primo tick utile.
-  `enabled=False` disattiva la Miccia; `missile_interval_ms=None` continua a
+  `enabled=False` disattiva la Scossa; `missile_interval_ms=None` continua a
   disabilitare gli spari anche sotto pressione.
 - `scoring.py`: `ScoreConfig`/`LevelScore`, senza dipendenze grafiche; tutti i
   calcoli sono interi. Per un taglio di area A su N=120.000 celle:
@@ -863,7 +972,7 @@ consegna precedente; per lo stato attuale fanno fede manifest e sezione sopra.
 
 `CAMPAIGN_BALANCE` in `level_config.py` sostituisce i profili generici 4–12.
 Nessuna condizione sul livello nel loop: ogni `LevelConfig` include anche
-`FuseConfig` e `ScoreConfig`. Crescono boss, missili, inseguimento e soglia;
+`ShockConfig` e `ScoreConfig`. Crescono boss, missili, inseguimento e soglia;
 calano gli intervalli di sparo/direzione senza discontinuità dopo il tutorial.
 
 | Livello | Boss px/tick | Missile px/tick | Sparo base ms | Conquista % |
@@ -895,13 +1004,13 @@ Baseline precedente: **120 test superati**. Suite aggiornata: **140 test superat
 .\.venv\Scripts\python.exe -m unittest discover -s tests -q
 ```
 
-Nuove regressioni: soglia Miccia esatta e non allineata al tick, disattivazione,
+Nuove regressioni: soglia Scossa esatta e non allineata al tick, disattivazione,
 persistenza nel taglio, reset, cadenza effettiva aumentata e movimento sul bordo;
 formule note di punteggio, premio del taglio unico, scadenza e catture tardive,
 zero area e input invalidi; congelamento in pausa/cattura/stati terminali;
 progressione monotona e spari runtime in tutti i dodici livelli; stessa cattura
 di circa 75% vincente al livello 1 e insufficiente al 12; rendering player 30×30
-centrato e impatto missile solo nella hitbox originale. Con seme 1989, Miccia
+centrato e impatto missile solo nella hitbox originale. Con seme 1989, Scossa
 attiva e bonus, stato identico a 30/60/144 FPS. Le regressioni precedenti su
 collisioni, territorio, audio e loop restano superate; AABB/sprite boss uguali
 verificati durante il caricamento di tutti i livelli.
@@ -910,7 +1019,7 @@ Controllati visivamente due frame 1024×768 renderizzati con SDL dummy: preavvis
 ambrato, allerta rossa, cursore ingrandito e pannello SCORE/BONUS/TEMPO leggibili,
 cornice e primaria rivelata coerenti. Nessuna operazione Git eseguita.
 
-**Limiti:** i missili restano assorbiti dal territorio sicuro; la Miccia rende
+**Limiti:** i missili restano assorbiti dal territorio sicuro; la Scossa rende
 più rischioso il taglio successivo, mentre il bonus decrescente dà un costo
 all'attesa. Non è un cacciatore che uccide sul bordo. Il cursore centrato può
 essere ritagliato ai margini del campo, come prima. Test deterministici e frame
@@ -1695,7 +1804,7 @@ Prima della migrazione:
 
 ## Verifiche e limiti residui
 
-Suite corrente: **233 test superati** con:
+Suite corrente: **248 test superati** con:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
@@ -1708,7 +1817,7 @@ densità dei substep nei casi di riferimento, missili rettilinei/diagonali senza
 tunnelling, catture concave e senza scritture parziali, audio e timer in pausa,
 respawn, vittoria/livelli, tutte le coppie SVG/primaria, gradienti senza label,
 cache, fallback separati, viewport quadrato e rendering del boss.
-La Fase 4 aggiunge Miccia, score/bonus, scaling del player senza variazioni
+La Fase 4 aggiunge Scossa, score/bonus, scaling del player senza variazioni
 fisiche, curva e soglie dei dodici livelli, determinismo sotto pressione.
 
 Diagnostica storica sul precedente corpo del boss: **3.000 movimenti**, seme 1989 e componenti casuali
@@ -1722,7 +1831,7 @@ certificati tutti i casi patologici di geometria: 1D resta aperto.
 
 Problemi ancora da affrontare:
 
-- **Bilanciamento:** velocità normalizzate, Miccia e dodici profili progressivi implementati;
+- **Bilanciamento:** velocità normalizzate, Scossa e dodici profili progressivi implementati;
   difficoltà e ritmo devono essere verificati giocando sul dispositivo reale.
 - **Cattura:** cooperativa e misurata nei casi descritti; da profilare su scie
   estreme e geometrie avverse. Score ancora per livello, scia esclusa dal conteggio.
@@ -1746,12 +1855,13 @@ Progressione delle consegne:
 | Viewport / tempo fisso | Proiezione 800×600 → 1024×768, accumulatore 60 Hz, tempo simulato unico e regressioni a FPS diversi, 103 test |
 | Cattura / vertical slice | CAPTURING cooperativo, scanline e commit isolato, 3 boss/configurazioni, HUD esterno e score, 116 test |
 | Ripristino / cornice | Spari originali verso il player, Cornice_gioco con pannelli HUD e ritaglio proporzionato degli sfondi, 120 test |
-| Fase 4 / preparazione Fase 5 | Player 2×, Miccia modulare, score/bonus area-tempo, curva di 12 livelli e missili progressivi, 140 test |
+| Fase 4 / preparazione Fase 5 | Player 2×, Scossa modulare, score/bonus area-tempo, curva di 12 livelli e missili progressivi, 140 test |
 | Fasi 5/6 desktop | Run Score, riepilogo/finale, menu, classifica atomica, manifest JSON e nuove dimensioni, 157 test; Web progettato separatamente |
-| Miccia / sprite energia | PerimeterThreat sui contorni aggiornati, collisione continua, sprite miccia condiviso e orientato, 178 test |
-| Gameplay / i18n / controller | Dodici boss, AABB player completa, frontiera, 5 vite/premi/scudi, doppie micce, cicli, cataloghi IT/EN e joystick; 207 test |
+| Scossa / sprite energia | PerimeterThreat sui contorni aggiornati, collisione continua, sprite scossa condiviso e orientato, 178 test |
+| Gameplay / i18n / controller | Dodici boss, AABB player completa, frontiera, 5 vite/premi/scudi, doppie scosse, cicli, cataloghi IT/EN e joystick; 207 test |
 | Debug / audio / premi | Vita extra al 74%, avvio debug solo in memoria, premi combinati, MP3 dinamici/shuffle e lingua a caldo; 221 test |
 | Audit vite / respawn | Riprodotte morti multiple da input mantenuto; interruzione del recupero alla morte e rilascio richiesto per ripartire, 15/99 vite e percorso menu/finale verificati; 233 test |
+| Localizzazione / morte | Scossa/Shock uniforme, stato DYING, sette fotogrammi/audio e mondo congelato, respawn/finale differiti e regressioni a FPS diversi; 248 test |
 
 Il gioco comprende una prima vertical slice di 3 livelli su una campagna
 giocabile di 12, con 5 vite iniziali, vita extra al 74%, scudi per tagli ≥25%,
@@ -1779,7 +1889,7 @@ collaudo esteso del bilanciamento e dei comportamenti dei boss.
 | Consolidamento restante | Playtest e profilazione di scie/geometrie avverse |
 | Fluidità e controllo | HUD score/bonus/tempo implementato; restano impostazioni dei volumi e collaudo sul dispositivo reale |
 | Vertical slice | Tre profili/boss implementati; spari diretti in tutti i livelli e inseguimento nel terzo; bilanciamento da collaudare |
-| Fase 4 — Varietà e bilanciamento | Implementati AABB player completa, scudi, vita extra, doppie micce e dodici asset; resta il playtest |
+| Fase 4 — Varietà e bilanciamento | Implementati AABB player completa, scudi, vita extra, doppie scosse e dodici asset; resta il playtest |
 | Fase 5 — Campagna | Manifest, Run Score per ciclo/livello, riepiloghi e scelta dei cicli con limiti espliciti implementati |
 | Fase 6 — Desktop | Menu/tutorial IT/EN, input controller e classifica personale implementati; pacchetto e collaudo hardware ancora aperti |
 | Release Web | Piano React/Vite/Vercel e contratto API/SQL pronti; build browser, backend e replay autorevole non deployati |
@@ -1796,7 +1906,7 @@ quando la barriera è disattivata.
 
 La documentazione storica riportata da
 [Arcade Database](https://adb.arcadeitalia.net/dettaglio_mame.php?game_name=qix)
-descrive anche miccia contro le esitazioni, ricompensa della modalità lenta e
+descrive anche scossa contro le esitazioni, ricompensa della modalità lenta e
 separazione dei due Qix. Sono meccaniche da valutare singolarmente dopo il core.
 
 Direzione approvata: identità vicina a Volfied, con immagine rivelata, boss LUKSO,
